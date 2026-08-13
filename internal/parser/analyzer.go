@@ -19,6 +19,23 @@ const (
 	KindEndpoint  SymbolKind = "endpoint"
 )
 
+// CallRef is one call target found inside a symbol's body: the simple name
+// being invoked, plus — when the analyzer could work it out from a local
+// variable/field declaration — the declared type of the receiver
+// (`ws.SendAsync()` with `ws` declared as `ClientWebSocket` -> Name:
+// "SendAsync", ReceiverType: "ClientWebSocket"). The graph builder uses
+// ReceiverType two ways: to route interface-typed calls to the right
+// implementing class (via the Implements edges already captured), and to
+// refuse to resolve a call whose receiver type isn't a symbol in the repo
+// at all (e.g. a BCL/stdlib/vendor type) even if the method name happens
+// to collide with one of the user's own methods. ReceiverType is "" when
+// the analyzer couldn't determine it — the builder then falls back to the
+// old bare-name heuristic (same-file preference, drop if ambiguous).
+type CallRef struct {
+	Name         string
+	ReceiverType string
+}
+
 // Symbol is a code entity extracted from a single file: a function, method,
 // type, class, interface, or an HTTP endpoint recognized by convention
 // (e.g. an Express route handler or an ASP.NET controller action).
@@ -30,8 +47,9 @@ type Symbol struct {
 	EndLine    int
 	Signature  string
 	DocComment string
-	Calls      []string // qualified/simple names of symbols this symbol calls (resolved later by the builder)
-	Implements []string // interface/base names this type implements or extends
+	Calls      []CallRef // symbols this symbol invokes (resolved later by the builder)
+	Creates    []string  // type names this symbol instantiates via `new` (kept separate from Calls: constructing a value is a different relationship than invoking a method on one)
+	Implements []string  // interface/base names this type implements or extends
 }
 
 // Import is a dependency declared by a file on another file/module.

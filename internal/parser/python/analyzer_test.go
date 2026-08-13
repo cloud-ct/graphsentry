@@ -66,7 +66,7 @@ func TestAnalyze(t *testing.T) {
 	}
 	found := false
 	for _, c := range method.Calls {
-		if c == "create_user" {
+		if c.Name == "create_user" {
 			found = true
 		}
 	}

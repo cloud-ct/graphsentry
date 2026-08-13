@@ -31,27 +31,30 @@ func ASCIIFlow(paths [][]*graph.PathStep) string {
 }
 
 type treeNode struct {
+	key      string // edge-kind + node name, used to dedupe branches during merge
 	label    string
 	children []*treeNode
 }
 
 // treeFromPaths merges the flat path list (which share a common root) into
-// a tree so branches sharing a prefix are only rendered once.
+// a tree so branches sharing a prefix are only rendered once. Nodes are
+// keyed by name+edge-kind (not just name) so e.g. a "calls Foo" and a
+// hypothetical "instantiates Foo" don't collapse into one branch.
 func treeFromPaths(paths [][]*graph.PathStep) *treeNode {
 	root := &treeNode{label: paths[0][0].Node.Name}
 	for _, path := range paths {
 		cur := root
 		for _, step := range path[1:] {
-			label := edgeLabel(step)
+			key := string(step.Via) + "::" + step.Node.Name
 			var found *treeNode
 			for _, c := range cur.children {
-				if c.label == label {
+				if c.key == key {
 					found = c
 					break
 				}
 			}
 			if found == nil {
-				found = &treeNode{label: label}
+				found = &treeNode{key: key, label: edgeLabel(step)}
 				cur.children = append(cur.children, found)
 			}
 			cur = found
@@ -60,7 +63,15 @@ func treeFromPaths(paths [][]*graph.PathStep) *treeNode {
 	return root
 }
 
+// edgeLabel renders a tree node's label, prefixing the node name with its
+// relationship to the parent when that relationship isn't the default
+// "calls" — e.g. "[instantiates] MetricDelta" vs. plain "PercentageDelta"
+// for a call — so the ASCII tree doesn't imply every edge is a method
+// call the way an unlabeled arrow would.
 func edgeLabel(step *graph.PathStep) string {
+	if step.Via != "" && step.Via != graph.EdgeCalls {
+		return fmt.Sprintf("[%s] %s", step.Via, step.Node.Name)
+	}
 	return step.Node.Name
 }
 

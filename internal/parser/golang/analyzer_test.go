@@ -77,7 +77,7 @@ func TestAnalyze(t *testing.T) {
 	}
 	found := map[string]bool{}
 	for _, c := range createUser.Calls {
-		found[c] = true
+		found[c.Name] = true
 	}
 	for _, want := range []string{"Println", "validate", "Save"} {
 		if !found[want] {

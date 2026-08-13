@@ -20,12 +20,13 @@ const (
 type EdgeKind string
 
 const (
-	EdgeImports    EdgeKind = "imports"
-	EdgeCalls      EdgeKind = "calls"
-	EdgeImplements EdgeKind = "implements"
-	EdgeDefines    EdgeKind = "defines" // file defines symbol
-	EdgeExtends    EdgeKind = "extends"
-	EdgeReferences EdgeKind = "references"
+	EdgeImports      EdgeKind = "imports"
+	EdgeCalls        EdgeKind = "calls"
+	EdgeInstantiates EdgeKind = "instantiates" // `new Foo()` — distinct from calls so diagrams don't conflate constructing a value with invoking a method on one
+	EdgeImplements   EdgeKind = "implements"
+	EdgeDefines      EdgeKind = "defines" // file defines symbol
+	EdgeExtends      EdgeKind = "extends"
+	EdgeReferences   EdgeKind = "references"
 )
 
 // Node is a single entity in the code graph.

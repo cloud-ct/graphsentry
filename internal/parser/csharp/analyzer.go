@@ -1,6 +1,12 @@
 // Package csharp implements parser.LanguageAnalyzer for C# source files
 // using tree-sitter. It recognizes ASP.NET-style attribute routing
-// ([HttpGet], [HttpPost], [Route(...)]) to extract HTTP endpoints.
+// ([HttpGet], [HttpPost], [Route(...)]) to extract HTTP endpoints, and
+// does lightweight, heuristic type tracking (field declarations + local
+// `var x = new T()` / `T x = ...` declarations) so call resolution can
+// route interface-typed calls to their implementation and refuse to guess
+// when a call's receiver isn't a type declared anywhere in the repo (e.g.
+// a BCL/vendor type) — see CallRef in the parser package for why this
+// matters.
 package csharp
 
 import (
@@ -45,11 +51,6 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 	}
 	text := func(n *sitter.Node) string { return n.Content(src) }
 
-	// classRoute tracks the [Route("...")] prefix declared on the
-	// enclosing class/controller, if any, so method-level routes can be
-	// combined with it the way ASP.NET does at runtime.
-	var classRouteStack []string
-
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
 		if n == nil {
@@ -91,11 +92,13 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 			})
 
 			route := attributeRoute(n, src, "Route")
-			classRouteStack = append(classRouteStack, route)
-			for i := 0; i < int(n.ChildCount()); i++ {
-				walkClassMember(n.Child(i), name, route, fa, src, line, text)
+			body := n.ChildByFieldName("body")
+			fieldTypes := classFieldTypes(body, src)
+			if body != nil {
+				for i := 0; i < int(body.ChildCount()); i++ {
+					walkClassMember(body.Child(i), name, route, fieldTypes, fa, src, line, text)
+				}
 			}
-			classRouteStack = classRouteStack[:len(classRouteStack)-1]
 			return // members handled by walkClassMember, don't double-walk
 		}
 		for i := 0; i < int(n.ChildCount()); i++ {
@@ -107,10 +110,113 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 	return fa, nil
 }
 
+// classFieldTypes scans a class body's direct field_declaration children
+// and returns a map of field name -> declared type name (generics/nullable
+// markers stripped), used as type hints when resolving `_field.Method()`
+// calls inside the class's methods.
+func classFieldTypes(classBody *sitter.Node, src []byte) map[string]string {
+	types := map[string]string{}
+	if classBody == nil {
+		return types
+	}
+	for i := 0; i < int(classBody.ChildCount()); i++ {
+		c := classBody.Child(i)
+		if c.Type() != "field_declaration" {
+			continue
+		}
+		varDecl := findChildOfType(c, "variable_declaration")
+		if varDecl == nil {
+			continue
+		}
+		typeNode := varDecl.ChildByFieldName("type")
+		if typeNode == nil {
+			continue
+		}
+		typeName := normalizeTypeName(typeNode.Content(src))
+		for _, decl := range findChildrenOfType(varDecl, "variable_declarator") {
+			if nameNode := decl.ChildByFieldName("name"); nameNode != nil {
+				types[nameNode.Content(src)] = typeName
+			}
+		}
+	}
+	return types
+}
+
+// collectParameterTypes extends hints (in place) with a method's parameter
+// types — `SendRawAsync(ClientWebSocket ws, ...)` means calls on `ws`
+// inside the body should be scoped to ClientWebSocket, not resolved as
+// bare method names. This is what catches the case a field/local-only scan
+// misses: a parameter whose type is a BCL/vendor type happening to share a
+// method name with something the containing class itself defines.
+func collectParameterTypes(paramList *sitter.Node, src []byte, hints map[string]string) {
+	for _, param := range findChildrenOfType(paramList, "parameter") {
+		typeNode := param.ChildByFieldName("type")
+		nameNode := param.ChildByFieldName("name")
+		if typeNode == nil || nameNode == nil {
+			continue
+		}
+		hints[nameNode.Content(src)] = normalizeTypeName(typeNode.Content(src))
+	}
+}
+
+// collectLocalTypes extends hints (in place) with the declared/inferred
+// types of local variables in a method body: `Foo x = ...` uses the
+// explicit type; `var x = new Foo(...)` infers Foo from the initializer.
+// `var x = SomeCall()` can't be inferred from syntax alone and is left
+// unset — calls through x then fall back to the old bare-name heuristic
+// rather than getting a (possibly wrong) type hint.
+func collectLocalTypes(body *sitter.Node, src []byte, hints map[string]string) {
+	if body == nil {
+		return
+	}
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type() == "local_declaration_statement" {
+			if varDecl := findChildOfType(n, "variable_declaration"); varDecl != nil {
+				typeNode := varDecl.ChildByFieldName("type")
+				declaredType := ""
+				if typeNode != nil && typeNode.Type() != "implicit_type" {
+					declaredType = normalizeTypeName(typeNode.Content(src))
+				}
+				for _, decl := range findChildrenOfType(varDecl, "variable_declarator") {
+					nameNode := decl.ChildByFieldName("name")
+					if nameNode == nil {
+						continue
+					}
+					resolvedType := declaredType
+					if resolvedType == "" && decl.ChildCount() > 0 {
+						// `var x = new Foo(...)` — infer from the
+						// initializer, which tree-sitter-c-sharp places as
+						// the declarator's last child (identifier, "=",
+						// value). Only a direct object_creation_expression
+						// counts, not one buried inside a call's
+						// arguments (e.g. `var x = Foo(new Bar())` should
+						// not attribute Bar's type to x).
+						if last := decl.Child(int(decl.ChildCount()) - 1); last.Type() == "object_creation_expression" {
+							if t := last.ChildByFieldName("type"); t != nil {
+								resolvedType = normalizeTypeName(t.Content(src))
+							}
+						}
+					}
+					if resolvedType != "" {
+						hints[nameNode.Content(src)] = resolvedType
+					}
+				}
+			}
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(body)
+}
+
 // walkClassMember handles method_declaration nodes inside a class body,
 // qualifying them as Class.Method and detecting HTTP endpoint attributes.
-// It also recurses into nested type declarations.
-func walkClassMember(n *sitter.Node, className, classRoute string, fa *parser.FileAnalysis, src []byte,
+func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes map[string]string, fa *parser.FileAnalysis, src []byte,
 	line func(*sitter.Node) (int, int), text func(*sitter.Node) string) {
 	if n == nil {
 		return
@@ -123,11 +229,25 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fa *parser.Fi
 		}
 		mName := text(nameNode)
 		start, end := line(n)
+
+		hints := make(map[string]string, len(fieldTypes))
+		for k, v := range fieldTypes {
+			hints[k] = v
+		}
+		if params := n.ChildByFieldName("parameters"); params != nil {
+			collectParameterTypes(params, src, hints)
+		}
+		if body := n.ChildByFieldName("body"); body != nil {
+			collectLocalTypes(body, src, hints)
+		}
+		calls, creates := extractCallsAndCreates(n, src, hints, className)
+
 		fa.Symbols = append(fa.Symbols, parser.Symbol{
 			Kind: parser.KindMethod, Name: mName, Qualified: className + "." + mName,
 			StartLine: start, EndLine: end,
 			Signature: signatureLine(text(n)),
-			Calls:     extractCalls(n, src),
+			Calls:     calls,
+			Creates:   creates,
 		})
 
 		if verb, route := endpointFromAttributes(n, src); verb != "" {
@@ -141,16 +261,15 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fa *parser.Fi
 				Kind: parser.KindEndpoint, Name: verb + " " + full, Qualified: verb + " " + full,
 				StartLine: start, EndLine: end,
 				Signature: signatureLine(text(n)),
-				Calls:     []string{className + "." + mName},
+				Calls:     []parser.CallRef{{Name: className + "." + mName}},
 			})
 		}
 	case "class_declaration", "interface_declaration", "struct_declaration":
-		// Nested types: recurse via the top-level walk logic isn't
-		// reachable here, so just skip — nested types are rare in this
-		// codebase's controllers/services and not worth the complexity.
+		// Nested types: skip — rare in this codebase's controllers/services
+		// and not worth the complexity of a separate field-type scope.
 	default:
 		for i := 0; i < int(n.ChildCount()); i++ {
-			walkClassMember(n.Child(i), className, classRoute, fa, src, line, text)
+			walkClassMember(n.Child(i), className, classRoute, fieldTypes, fa, src, line, text)
 		}
 	}
 }
@@ -227,6 +346,18 @@ func findChildOfType(n *sitter.Node, t string) *sitter.Node {
 	return nil
 }
 
+// findChildrenOfType returns every direct child of n with the given type
+// (unlike findChildOfType, which stops at the first).
+func findChildrenOfType(n *sitter.Node, t string) []*sitter.Node {
+	var out []*sitter.Node
+	for i := 0; i < int(n.ChildCount()); i++ {
+		if c := n.Child(i); c.Type() == t {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // findDescendantOfType does a depth-first search for the first descendant
 // of the given type (unlike findChildOfType, which only checks direct
 // children).
@@ -268,30 +399,48 @@ func signatureLine(full string) string {
 	return full
 }
 
-func extractCalls(n *sitter.Node, src []byte) []string {
-	seen := map[string]bool{}
-	var calls []string
+// normalizeTypeName strips generic type arguments, nullable markers, and
+// array brackets so type hints compare cleanly against declared class/
+// interface names: "List<Foo>" -> "List", "Foo?" -> "Foo", "Bar[]" -> "Bar".
+func normalizeTypeName(raw string) string {
+	s := strings.TrimSpace(raw)
+	if idx := strings.Index(s, "<"); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.TrimSuffix(s, "?")
+	s = strings.TrimSuffix(s, "[]")
+	return strings.TrimSpace(s)
+}
+
+// extractCallsAndCreates walks a method body collecting both call targets
+// (with a receiver type hint when typeHints/this-resolution can supply
+// one) and the type names it instantiates via `new`.
+func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]string, className string) ([]parser.CallRef, []string) {
+	seenCall := map[string]bool{}
+	seenCreate := map[string]bool{}
+	var calls []parser.CallRef
+	var creates []string
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
 		if n == nil {
 			return
 		}
-		if n.Type() == "invocation_expression" {
-			fn := n.ChildByFieldName("function")
-			if fn != nil {
-				name := callTarget(fn, src)
-				if name != "" && !seen[name] {
-					seen[name] = true
-					calls = append(calls, name)
+		switch n.Type() {
+		case "invocation_expression":
+			if fn := n.ChildByFieldName("function"); fn != nil {
+				name, receiverType := callTargetWithType(fn, src, typeHints, className)
+				key := receiverType + "\x00" + name
+				if name != "" && !seenCall[key] {
+					seenCall[key] = true
+					calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType})
 				}
 			}
-		}
-		if n.Type() == "object_creation_expression" {
+		case "object_creation_expression":
 			if t := n.ChildByFieldName("type"); t != nil {
-				name := t.Content(src)
-				if name != "" && !seen[name] {
-					seen[name] = true
-					calls = append(calls, name)
+				typeName := normalizeTypeName(t.Content(src))
+				if typeName != "" && !seenCreate[typeName] {
+					seenCreate[typeName] = true
+					creates = append(creates, typeName)
 				}
 			}
 		}
@@ -300,17 +449,37 @@ func extractCalls(n *sitter.Node, src []byte) []string {
 		}
 	}
 	walk(n)
-	return calls
+	return calls, creates
 }
 
-func callTarget(fn *sitter.Node, src []byte) string {
+// callTargetWithType extracts a call's method name and, when possible, the
+// declared type of its receiver: `this.Foo()` resolves to the enclosing
+// class; `field.Foo()` or `local.Foo()` resolves via typeHints; anything
+// else (chained access, static class calls, base.Foo()) yields no hint and
+// falls back to the old bare-name heuristic in the graph builder.
+func callTargetWithType(fn *sitter.Node, src []byte, typeHints map[string]string, className string) (name, receiverType string) {
 	switch fn.Type() {
 	case "identifier":
-		return fn.Content(src)
+		return fn.Content(src), ""
 	case "member_access_expression":
-		if name := fn.ChildByFieldName("name"); name != nil {
-			return name.Content(src)
+		nameNode := fn.ChildByFieldName("name")
+		if nameNode == nil {
+			return "", ""
 		}
+		name = nameNode.Content(src)
+		exprNode := fn.ChildByFieldName("expression")
+		if exprNode == nil {
+			return name, ""
+		}
+		switch exprNode.Type() {
+		case "this_expression":
+			return name, className
+		case "identifier":
+			if t, ok := typeHints[exprNode.Content(src)]; ok {
+				return name, t
+			}
+		}
+		return name, ""
 	}
-	return ""
+	return "", ""
 }

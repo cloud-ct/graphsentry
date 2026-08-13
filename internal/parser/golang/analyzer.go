@@ -152,9 +152,9 @@ func signatureLine(full string) string {
 // invoked functions/methods (identifier or selector before a call
 // expression's arguments). This is a heuristic, not full type resolution:
 // the graph builder resolves these names against known symbols in the repo.
-func extractCalls(n *sitter.Node, src []byte) []string {
+func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
 	seen := map[string]bool{}
-	var calls []string
+	var calls []parser.CallRef
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
 		if n == nil {
@@ -166,7 +166,7 @@ func extractCalls(n *sitter.Node, src []byte) []string {
 				name := callTarget(fn, src)
 				if name != "" && !seen[name] {
 					seen[name] = true
-					calls = append(calls, name)
+					calls = append(calls, parser.CallRef{Name: name})
 				}
 			}
 		}

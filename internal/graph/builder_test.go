@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/huandert/repolens/internal/parser"
+	"github.com/huandert/repolens/internal/parser/csharp"
 	"github.com/huandert/repolens/internal/parser/golang"
 )
 
@@ -105,5 +106,97 @@ func process() {}
 	}
 	if !found {
 		t.Error("expected a calls edge from Handler to process(), even though process() is ambiguous repo-wide")
+	}
+}
+
+// TestBuilderRoutesInterfaceCallToImplementer is an end-to-end regression
+// test for the "controller calls a service through an injected interface"
+// case reported against bankme-ai-main: the call wasn't mapped at all
+// because bare-name resolution saw the method name as ambiguous (or
+// unresolved) and silently dropped it. With a receiver type hint, the call
+// should route through the Implements edge to the concrete class.
+func TestBuilderRoutesInterfaceCallToImplementer(t *testing.T) {
+	const controllerSrc = `class UsersController {
+    private readonly IUserService _userService;
+
+    public async Task Create() {
+        await _userService.CreateUserAsync();
+    }
+}
+`
+	const interfaceSrc = `interface IUserService {
+    Task CreateUserAsync();
+}
+`
+	const serviceSrc = `class UserService : IUserService {
+    public async Task CreateUserAsync() {
+    }
+}
+`
+	a := csharp.New()
+	controllerFA, err := a.Analyze("controller.cs", []byte(controllerSrc))
+	if err != nil {
+		t.Fatalf("analyze controller failed: %v", err)
+	}
+	interfaceFA, err := a.Analyze("iuserservice.cs", []byte(interfaceSrc))
+	if err != nil {
+		t.Fatalf("analyze interface failed: %v", err)
+	}
+	serviceFA, err := a.Analyze("userservice.cs", []byte(serviceSrc))
+	if err != nil {
+		t.Fatalf("analyze service failed: %v", err)
+	}
+
+	g := NewBuilder().Build([]*parser.FileAnalysis{controllerFA, interfaceFA, serviceFA})
+
+	createID := "symbol::controller.cs::UsersController.Create"
+	implID := "symbol::userservice.cs::UserService.CreateUserAsync"
+
+	found := false
+	for _, e := range g.Edges {
+		if e.From == createID && e.Kind == EdgeCalls {
+			if e.To != implID {
+				t.Errorf("expected Create to call the implementer %s, got %s", implID, e.To)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected a calls edge from UsersController.Create to UserService.CreateUserAsync, routed via the IUserService interface")
+	}
+}
+
+// TestBuilderRefusesForeignReceiverType is a regression test for a false
+// edge reported against bankme-ai-main: a call on a locally-`new`'d BCL
+// type (ClientWebSocket.SendAsync) was wrongly resolved to the user's own
+// unrelated SendAsync method because resolution only compared bare method
+// names. Once the receiver's declared type is known and isn't a symbol
+// anywhere in the repo, resolution must refuse rather than guess.
+func TestBuilderRefusesForeignReceiverType(t *testing.T) {
+	const src = `class Worker {
+    public async Task Run() {
+        var ws = new ClientWebSocket();
+        await ws.SendAsync(data, token);
+    }
+
+    public async Task SendAsync(byte[] data) {
+    }
+}
+`
+	a := csharp.New()
+	fa, err := a.Analyze("worker.cs", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+
+	g := NewBuilder().Build([]*parser.FileAnalysis{fa})
+
+	runID := "symbol::worker.cs::Worker.Run"
+	wrongTargetID := "symbol::worker.cs::Worker.SendAsync"
+
+	for _, e := range g.Edges {
+		if e.From == runID && e.To == wrongTargetID && e.Kind == EdgeCalls {
+			t.Errorf("expected no calls edge from Run to Worker's own SendAsync (ws is a ClientWebSocket, unrelated), but found one")
+		}
 	}
 }

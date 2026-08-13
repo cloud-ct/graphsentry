@@ -178,7 +178,7 @@ func collectFunction(n *sitter.Node, className string, fa *parser.FileAnalysis, 
 			Kind: parser.KindEndpoint, Name: verb + " " + route, Qualified: verb + " " + route,
 			StartLine: start, EndLine: end,
 			Signature: signatureLine(text(funcNode)),
-			Calls:     []string{qualified},
+			Calls:     []parser.CallRef{{Name: qualified}},
 		})
 	}
 }
@@ -316,9 +316,9 @@ func signatureLine(full string) string {
 // identifier calls (foo()) and the rightmost attribute of member calls
 // (obj.method() -> "method"). The graph builder resolves these against
 // known symbols; over-reporting is fine, unresolved names are dropped.
-func extractCalls(n *sitter.Node, src []byte) []string {
+func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
 	seen := map[string]bool{}
-	var calls []string
+	var calls []parser.CallRef
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
 		if n == nil {
@@ -330,7 +330,7 @@ func extractCalls(n *sitter.Node, src []byte) []string {
 				name := callTarget(fn, src)
 				if name != "" && !seen[name] {
 					seen[name] = true
-					calls = append(calls, name)
+					calls = append(calls, parser.CallRef{Name: name})
 				}
 			}
 		}

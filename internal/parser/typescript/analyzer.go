@@ -187,9 +187,9 @@ func signatureLine(full string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(full), " "))
 }
 
-func extractCalls(n *sitter.Node, src []byte) []string {
+func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
 	seen := map[string]bool{}
-	var calls []string
+	var calls []parser.CallRef
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
 		if n == nil {
@@ -201,7 +201,7 @@ func extractCalls(n *sitter.Node, src []byte) []string {
 				name := callTarget(fn, src)
 				if name != "" && !seen[name] {
 					seen[name] = true
-					calls = append(calls, name)
+					calls = append(calls, parser.CallRef{Name: name})
 				}
 			}
 		}
