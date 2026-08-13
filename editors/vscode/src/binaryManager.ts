@@ -14,7 +14,7 @@ const REPO = "huandertironi/repolens";
 // Pinned to the CLI release this extension version was built against.
 // Bump alongside editors/vscode/package.json's "version" when a new
 // repolens CLI release should be picked up.
-const CLI_RELEASE_TAG = "v0.1.0";
+const CLI_RELEASE_TAG = "v0.1.1";
 
 interface PlatformTarget {
   os: "linux" | "darwin" | "windows";
