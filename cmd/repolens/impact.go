@@ -13,6 +13,7 @@ import (
 func newImpactCmd() *cobra.Command {
 	var repoFlag string
 	var depth int
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "impact <symbol>",
 		Short: "Show what depends on a symbol — what could break if you change it (deterministic, no LLM)",
@@ -40,12 +41,16 @@ func newImpactCmd() *cobra.Command {
 				return err
 			}
 			res := g.Impact(id, depth)
+			if asJSON {
+				return printJSON(res)
+			}
 			fmt.Print(diagram.ASCIIImpact(res))
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&repoFlag, "repo", "", "repository to query (default: last analyzed)")
 	cmd.Flags().IntVar(&depth, "depth", 0, "max hops to traverse (0 = unlimited)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output structured JSON instead of the human-readable rendering")
 	return cmd
 }
 

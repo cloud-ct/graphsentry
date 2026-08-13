@@ -11,6 +11,7 @@ import (
 func newCouplingCmd() *cobra.Command {
 	var repoFlag string
 	var top int
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "coupling",
 		Short: "Rank the most coupled modules/symbols by fan-in + fan-out (deterministic, no LLM)",
@@ -34,6 +35,9 @@ func newCouplingCmd() *cobra.Command {
 				return err
 			}
 			scores := g.TopCoupled(top)
+			if asJSON {
+				return printJSON(scores)
+			}
 			if len(scores) == 0 {
 				fmt.Println("(no coupling data — did analyze find any calls/imports?)")
 				return nil
@@ -47,6 +51,7 @@ func newCouplingCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repoFlag, "repo", "", "repository to query (default: last analyzed)")
 	cmd.Flags().IntVar(&top, "top", 10, "number of results to show")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output structured JSON instead of the human-readable rendering")
 	return cmd
 }
 
