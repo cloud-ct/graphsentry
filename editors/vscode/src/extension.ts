@@ -1,21 +1,36 @@
 import * as vscode from "vscode";
 import { RepoLensClient, RepoLensError } from "./repolens";
+import { RepoLensCodeLensProvider } from "./codeLensProvider";
 
 let client: RepoLensClient;
 let outputChannel: vscode.OutputChannel;
+let codeLensProvider: RepoLensCodeLensProvider;
 
 export function activate(context: vscode.ExtensionContext) {
   client = new RepoLensClient(context);
   outputChannel = vscode.window.createOutputChannel("RepoLens");
   context.subscriptions.push(outputChannel);
 
+  codeLensProvider = new RepoLensCodeLensProvider(client);
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider({ scheme: "file" }, codeLensProvider)
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("repolens.analyze", () => runAnalyze()),
     vscode.commands.registerCommand("repolens.coupling", () => runCoupling()),
-    vscode.commands.registerCommand("repolens.impact", () => runImpact()),
-    vscode.commands.registerCommand("repolens.flow", () => runFlow()),
+    vscode.commands.registerCommand("repolens.impact", (symbol?: string) => runImpact(symbol)),
+    vscode.commands.registerCommand("repolens.flow", (symbol?: string) => runFlow(symbol)),
     vscode.commands.registerCommand("repolens.ask", () => runAsk())
   );
+
+  // Pick up a repo analyzed in a previous session so CodeLenses appear
+  // without requiring the user to re-run Analyze every time they open the
+  // workspace. Silent on failure (e.g. never analyzed yet).
+  const repoPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (repoPath) {
+    void codeLensProvider.refresh(repoPath);
+  }
 }
 
 export function deactivate() {}
@@ -52,6 +67,7 @@ async function runAnalyze() {
       () => client.analyze(repoPath)
     );
     vscode.window.showInformationMessage("RepoLens: analysis complete.");
+    await codeLensProvider.refresh(repoPath);
   });
 }
 
@@ -94,18 +110,25 @@ async function symbolAtCursor(): Promise<string | undefined> {
   return vscode.window.showInputBox({ prompt: "Symbol name to analyze" });
 }
 
-async function runImpact() {
+// CodeLens commands pass the full internal node ID ("symbol::path::Qualified.Name")
+// so the CLI resolves unambiguously; for display, show just the trailing name.
+function displayName(symbolOrId: string): string {
+  const parts = symbolOrId.split("::");
+  return parts[parts.length - 1];
+}
+
+async function runImpact(symbolArg?: string) {
   const repoPath = currentWorkspacePath();
   if (!repoPath) return;
 
-  const symbol = await symbolAtCursor();
+  const symbol = symbolArg ?? (await symbolAtCursor());
   if (!symbol) return;
 
   const result = await withErrorHandling(() => client.impact(repoPath, symbol));
   if (!result) return;
 
   if (result.impacted.length === 0) {
-    vscode.window.showInformationMessage(`RepoLens: nothing depends on "${symbol}" — safe to change in isolation.`);
+    vscode.window.showInformationMessage(`RepoLens: nothing depends on "${displayName(symbol)}" — safe to change in isolation.`);
     return;
   }
 
@@ -117,24 +140,24 @@ async function runImpact() {
   }));
 
   const picked = await vscode.window.showQuickPick(items, {
-    title: `What depends on "${symbol}" (${result.impacted.length} impacted)`,
+    title: `What depends on "${displayName(symbol)}" (${result.impacted.length} impacted)`,
   });
   if (picked) {
     await openNode(repoPath, picked.node);
   }
 }
 
-async function runFlow() {
+async function runFlow(symbolArg?: string) {
   const repoPath = currentWorkspacePath();
   if (!repoPath) return;
 
-  const symbol = await symbolAtCursor();
+  const symbol = symbolArg ?? (await symbolAtCursor());
   if (!symbol) return;
 
   const result = await withErrorHandling(() => client.flow(repoPath, symbol));
   if (!result) return;
 
-  showFlowPanel(symbol, result.ascii, result.mermaid);
+  showFlowPanel(displayName(symbol), result.ascii, result.mermaid);
 }
 
 function showFlowPanel(symbol: string, ascii: string, mermaid: string) {
