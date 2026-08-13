@@ -11,6 +11,7 @@ import (
 	"github.com/huandert/repolens/internal/parser"
 	"github.com/huandert/repolens/internal/parser/csharp"
 	"github.com/huandert/repolens/internal/parser/golang"
+	"github.com/huandert/repolens/internal/parser/python"
 	"github.com/huandert/repolens/internal/parser/typescript"
 )
 
@@ -46,8 +47,8 @@ func runAnalyze(target, branch, token string) error {
 	}
 	fmt.Printf("  ready at %s (commit %s)\n", result.Path, shortHash(result.Commit))
 
-	registry := parser.NewRegistry(golang.New(), typescript.New(), csharp.New())
-	extSet := map[string]bool{".go": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".cs": true}
+	registry := parser.NewRegistry(golang.New(), typescript.New(), csharp.New(), python.New())
+	extSet := map[string]bool{".go": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".cs": true, ".py": true}
 
 	files, err := ingest.DiscoverFiles(result.Path, extSet)
 	if err != nil {

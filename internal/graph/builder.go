@@ -113,12 +113,17 @@ func (b *Builder) resolveName(name string, fromID string) (string, bool) {
 		}
 		return candidates[0], true
 	}
+	// symbolID format is "symbol::<filePath>::<qualified>" — split on "::"
+	// with a limit so a filePath containing "::" (it won't, but qualified
+	// names or route strings like "POST /path" safely might) doesn't throw
+	// off the file portion we compare candidates against.
+	parts := strings.SplitN(fromID, "::", 3)
 	fromFile := ""
-	if idx := strings.Index(fromID, "::"); idx >= 0 {
-		fromFile = fromID[len("symbol::"):]
+	if len(parts) >= 2 {
+		fromFile = parts[1]
 	}
 	for _, c := range candidates {
-		if c != fromID && strings.HasPrefix(c, "symbol::"+fromFile) {
+		if c != fromID && strings.HasPrefix(c, "symbol::"+fromFile+"::") {
 			return c, true
 		}
 	}
