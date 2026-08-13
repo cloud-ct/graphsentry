@@ -243,19 +243,38 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource} 'nonce-${cspNonce}'; style-src 'unsafe-inline';">
 <style>
-  body { font-family: var(--vscode-font-family); padding: 1rem; color: var(--vscode-foreground); }
+  /* Full-bleed layout: the graph gets the whole viewport width/height
+     available to the panel, not just however wide its initial (often
+     small) content happens to be — see the JS below for why the SVG's
+     own width/height also have to be stripped for this to actually take
+     effect once svg-pan-zoom is attached. */
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-foreground);
+    padding: 0.75rem 1rem;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
   pre { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; overflow-x: auto; }
-  h2 { font-weight: 600; }
+  h2 { font-weight: 600; margin: 0.5rem 0; }
   #graphContainer {
     background: var(--vscode-textCodeBlock-background);
     border-radius: 6px;
-    height: 70vh;
+    flex: 1 1 auto;
+    min-height: 55vh;
+    width: 100%;
+    box-sizing: border-box;
     /* svg-pan-zoom takes over wheel/drag on the SVG itself; the
        container just needs to clip it and give it room to breathe. */
     overflow: hidden;
+    position: relative;
   }
-  #graphContainer svg { width: 100%; height: 100%; }
-  .hint { opacity: 0.65; font-size: 0.85em; margin: 0.25rem 0 0.75rem; }
+  #graphContainer svg { display: block; width: 100%; height: 100%; }
+  #asciiSection { flex: 0 0 auto; max-height: 25vh; overflow-y: auto; }
+  .hint { opacity: 0.65; font-size: 0.85em; margin: 0 0 0.5rem; }
 </style>
 <script nonce="${cspNonce}" src="${mermaidUri}"></script>
 <script nonce="${cspNonce}" src="${panZoomUri}"></script>
@@ -264,8 +283,10 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
   <h2>Call flow: ${symbol}</h2>
   <p class="hint">Scroll to zoom, drag to pan.</p>
   <div id="graphContainer"></div>
-  <h2>ASCII</h2>
-  <pre>${escapedAscii}</pre>
+  <div id="asciiSection">
+    <h2>ASCII</h2>
+    <pre>${escapedAscii}</pre>
+  </div>
   <script nonce="${cspNonce}">
     const graphDefinition = ${JSON.stringify(mermaid)};
     mermaid.initialize({ startOnLoad: false, theme: "dark" });
@@ -273,16 +294,41 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
       const container = document.getElementById("graphContainer");
       container.innerHTML = svg;
       const svgEl = container.querySelector("svg");
-      if (svgEl) {
-        svgPanZoom(svgEl, {
-          zoomEnabled: true,
-          controlIconsEnabled: true,
-          fit: true,
-          center: true,
-          minZoom: 0.2,
-          maxZoom: 12,
-        });
-      }
+      if (!svgEl) return;
+
+      // Mermaid sets explicit pixel width/height (+ a matching viewBox)
+      // sized to the diagram's own content — small for a small diagram.
+      // Our CSS "width:100%; height:100%" only overrides how the SVG is
+      // *drawn*, not the intrinsic size svg-pan-zoom measures at init, so
+      // without stripping these attributes svg-pan-zoom locks its pan
+      // boundaries to that original small size: zooming in then runs out
+      // of diagram before it runs out of screen, which reads as the
+      // diagram getting "cut off" at the edges instead of just being
+      // zoomed. The viewBox (which defines the diagram's own coordinate
+      // system) is left alone — only the fixed pixel sizing goes.
+      svgEl.removeAttribute("width");
+      svgEl.removeAttribute("height");
+
+      const instance = svgPanZoom(svgEl, {
+        zoomEnabled: true,
+        controlIconsEnabled: true,
+        fit: true,
+        center: true,
+        minZoom: 0.1,
+        maxZoom: 20,
+      });
+
+      // Re-fit once layout has actually settled (fonts/flex sizing can
+      // still be resolving on the very first frame) and again whenever
+      // the panel is resized, so the full-bleed container size from the
+      // CSS above is what svg-pan-zoom actually measures against.
+      const refit = () => {
+        instance.resize();
+        instance.fit();
+        instance.center();
+      };
+      requestAnimationFrame(refit);
+      window.addEventListener("resize", refit);
     });
   </script>
 </body>

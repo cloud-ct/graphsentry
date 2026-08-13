@@ -34,6 +34,21 @@ const (
 type CallRef struct {
 	Name         string
 	ReceiverType string
+	// Line is the 1-based source line the call appears on, used by the
+	// graph builder to interleave Calls and Creates back into the order
+	// they're actually written in — the two are collected into separate
+	// slices during extraction (see CreateRef), so without a position to
+	// re-sort by, edges would always come out "all calls, then all
+	// creates" regardless of how they're interleaved in the source.
+	Line int
+}
+
+// CreateRef is one `new Foo()` found inside a symbol's body: the
+// instantiated type's name, plus its source line — see CallRef.Line for
+// why the line matters.
+type CreateRef struct {
+	TypeName string
+	Line     int
 }
 
 // Symbol is a code entity extracted from a single file: a function, method,
@@ -47,9 +62,9 @@ type Symbol struct {
 	EndLine    int
 	Signature  string
 	DocComment string
-	Calls      []CallRef // symbols this symbol invokes (resolved later by the builder)
-	Creates    []string  // type names this symbol instantiates via `new` (kept separate from Calls: constructing a value is a different relationship than invoking a method on one)
-	Implements []string  // interface/base names this type implements or extends
+	Calls      []CallRef   // symbols this symbol invokes (resolved later by the builder)
+	Creates    []CreateRef // types this symbol instantiates via `new` (kept separate from Calls: constructing a value is a different relationship than invoking a method on one)
+	Implements []string    // interface/base names this type implements or extends
 }
 
 // Import is a dependency declared by a file on another file/module.

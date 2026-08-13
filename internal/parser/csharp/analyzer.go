@@ -269,7 +269,7 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes ma
 				Kind: parser.KindEndpoint, Name: verb + " " + full, Qualified: verb + " " + full,
 				StartLine: start, EndLine: end,
 				Signature: signatureLine(text(n)),
-				Calls:     []parser.CallRef{{Name: className + "." + mName}},
+				Calls:     []parser.CallRef{{Name: className + "." + mName, Line: start}},
 			})
 		}
 	case "class_declaration", "interface_declaration", "struct_declaration":
@@ -423,11 +423,11 @@ func normalizeTypeName(raw string) string {
 // extractCallsAndCreates walks a method body collecting both call targets
 // (with a receiver type hint when typeHints/this-resolution can supply
 // one) and the type names it instantiates via `new`.
-func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]string, className string) ([]parser.CallRef, []string) {
+func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]string, className string) ([]parser.CallRef, []parser.CreateRef) {
 	seenCall := map[string]bool{}
 	seenCreate := map[string]bool{}
 	var calls []parser.CallRef
-	var creates []string
+	var creates []parser.CreateRef
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
 		if n == nil {
@@ -440,7 +440,7 @@ func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]str
 				key := receiverType + "\x00" + name
 				if name != "" && !seenCall[key] {
 					seenCall[key] = true
-					calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType})
+					calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType, Line: int(n.StartPoint().Row) + 1})
 				}
 			}
 		case "object_creation_expression":
@@ -448,7 +448,7 @@ func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]str
 				typeName := normalizeTypeName(t.Content(src))
 				if typeName != "" && !seenCreate[typeName] {
 					seenCreate[typeName] = true
-					creates = append(creates, typeName)
+					creates = append(creates, parser.CreateRef{TypeName: typeName, Line: int(n.StartPoint().Row) + 1})
 				}
 			}
 		}

@@ -200,3 +200,52 @@ func TestBuilderRefusesForeignReceiverType(t *testing.T) {
 		}
 	}
 }
+
+// TestBuilderPreservesSourceOrderAcrossCallsAndCreates is a regression
+// test for calls and instantiations rendering out of order in flow
+// diagrams: extraction collects them into two separate slices
+// (parser.Symbol.Calls / .Creates), and edges used to be added "every
+// call, then every instantiation" regardless of how they're actually
+// interleaved in the source. mergeBySourceOrder fixes this by sorting on
+// each entry's captured source line before edges are added — this checks
+// that fix holds for a method that calls, instantiates, then calls again,
+// which would come out as [call, call, instantiate] without it.
+func TestBuilderPreservesSourceOrderAcrossCallsAndCreates(t *testing.T) {
+	const src = `class Worker {
+    public void Run() {
+        First();
+        var m = new Middle();
+        Last();
+    }
+
+    public void First() {}
+    public void Last() {}
+}
+
+class Middle {}
+`
+	a := csharp.New()
+	fa, err := a.Analyze("worker.cs", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+
+	g := NewBuilder().Build([]*parser.FileAnalysis{fa})
+
+	runID := "symbol::worker.cs::Worker.Run"
+	var gotOrder []string
+	for _, e := range g.Out(runID) {
+		gotOrder = append(gotOrder, string(e.Kind)+":"+g.Nodes[e.To].Name)
+	}
+
+	want := []string{"calls:First", "instantiates:Middle", "calls:Last"}
+	if len(gotOrder) != len(want) {
+		t.Fatalf("expected edges %v, got %v", want, gotOrder)
+	}
+	for i := range want {
+		if gotOrder[i] != want[i] {
+			t.Errorf("expected edge order %v, got %v", want, gotOrder)
+			break
+		}
+	}
+}

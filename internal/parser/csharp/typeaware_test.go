@@ -55,7 +55,7 @@ func TestTypeHints(t *testing.T) {
 	}
 	creates := map[string]bool{}
 	for _, c := range run.Creates {
-		creates[c] = true
+		creates[c.TypeName] = true
 	}
 	if !creates["ClientWebSocket"] || !creates["MetricDelta"] {
 		t.Errorf("expected Creates to include ClientWebSocket and MetricDelta, got %v", run.Creates)

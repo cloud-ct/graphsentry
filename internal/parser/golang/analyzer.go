@@ -166,7 +166,7 @@ func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
 				name := callTarget(fn, src)
 				if name != "" && !seen[name] {
 					seen[name] = true
-					calls = append(calls, parser.CallRef{Name: name})
+					calls = append(calls, parser.CallRef{Name: name, Line: int(n.StartPoint().Row) + 1})
 				}
 			}
 		}

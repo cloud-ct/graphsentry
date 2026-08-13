@@ -178,7 +178,7 @@ func collectFunction(n *sitter.Node, className string, fa *parser.FileAnalysis, 
 			Kind: parser.KindEndpoint, Name: verb + " " + route, Qualified: verb + " " + route,
 			StartLine: start, EndLine: end,
 			Signature: signatureLine(text(funcNode)),
-			Calls:     []parser.CallRef{{Name: qualified}},
+			Calls:     []parser.CallRef{{Name: qualified, Line: start}},
 		})
 	}
 }
@@ -330,7 +330,7 @@ func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
 				name := callTarget(fn, src)
 				if name != "" && !seen[name] {
 					seen[name] = true
-					calls = append(calls, parser.CallRef{Name: name})
+					calls = append(calls, parser.CallRef{Name: name, Line: int(n.StartPoint().Row) + 1})
 				}
 			}
 		}

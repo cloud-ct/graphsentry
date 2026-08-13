@@ -2,6 +2,7 @@ package graph
 
 import (
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/huandert/repolens/internal/parser"
@@ -101,20 +102,52 @@ func (b *Builder) Build(analyses []*parser.FileAnalysis) *Graph {
 	for _, fa := range analyses {
 		for _, sym := range fa.Symbols {
 			fromID := symbolID(fa.Path, sym.Qualified)
-			for _, call := range sym.Calls {
-				if toID, ok := b.resolveCall(call, fromID); ok {
-					b.g.AddEdge(fromID, toID, EdgeCalls)
+			for _, act := range mergeBySourceOrder(sym.Calls, sym.Creates) {
+				if act.isCreate {
+					if toID, ok := b.resolveSingle(b.typeIndex[act.create.TypeName], fromID); ok {
+						b.g.AddEdge(fromID, toID, EdgeInstantiates)
+					}
+					continue
 				}
-			}
-			for _, typeName := range sym.Creates {
-				if toID, ok := b.resolveSingle(b.typeIndex[typeName], fromID); ok {
-					b.g.AddEdge(fromID, toID, EdgeInstantiates)
+				if toID, ok := b.resolveCall(act.call, fromID); ok {
+					b.g.AddEdge(fromID, toID, EdgeCalls)
 				}
 			}
 		}
 	}
 
 	return b.g
+}
+
+// sourceAction is one call or instantiation, tagged with its source line so
+// mergeBySourceOrder can interleave the two back into the order they're
+// actually written in.
+type sourceAction struct {
+	line     int
+	isCreate bool
+	call     parser.CallRef
+	create   parser.CreateRef
+}
+
+// mergeBySourceOrder combines a symbol's Calls and Creates — collected
+// into separate slices during extraction — back into one line-ordered
+// sequence. Edges get added to the graph in this order, and FlowPaths (via
+// Graph.Out) preserves edge-insertion order, so this is what ultimately
+// makes flow diagrams read top-to-bottom the way the method body does,
+// instead of "every call, then every instantiation" regardless of how
+// they're actually interleaved in the source. Stable sort so that any two
+// entries sharing a line (rare, but possible for a compound statement)
+// keep their original extraction order relative to each other.
+func mergeBySourceOrder(calls []parser.CallRef, creates []parser.CreateRef) []sourceAction {
+	actions := make([]sourceAction, 0, len(calls)+len(creates))
+	for _, c := range calls {
+		actions = append(actions, sourceAction{line: c.Line, call: c})
+	}
+	for _, c := range creates {
+		actions = append(actions, sourceAction{line: c.Line, isCreate: true, create: c})
+	}
+	sort.SliceStable(actions, func(i, j int) bool { return actions[i].line < actions[j].line })
+	return actions
 }
 
 // resolveName finds the best-matching node ID for a call/implements target
