@@ -1,4 +1,5 @@
 src/**
+scripts/**
 .vscode/**
 .vscode-test/**
 **/*.map

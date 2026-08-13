@@ -5,8 +5,10 @@ import { RepoLensCodeLensProvider } from "./codeLensProvider";
 let client: RepoLensClient;
 let outputChannel: vscode.OutputChannel;
 let codeLensProvider: RepoLensCodeLensProvider;
+let extensionUri: vscode.Uri;
 
 export function activate(context: vscode.ExtensionContext) {
+  extensionUri = context.extensionUri;
   client = new RepoLensClient(context);
   outputChannel = vscode.window.createOutputChannel("RepoLens");
   context.subscriptions.push(outputChannel);
@@ -14,6 +16,13 @@ export function activate(context: vscode.ExtensionContext) {
   codeLensProvider = new RepoLensCodeLensProvider(client);
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider({ scheme: "file" }, codeLensProvider)
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("repolens.codeLens.enabled")) {
+        codeLensProvider.notifyChanged();
+      }
+    })
   );
 
   context.subscriptions.push(
@@ -26,24 +35,41 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Pick up a repo analyzed in a previous session so CodeLenses appear
   // without requiring the user to re-run Analyze every time they open the
-  // workspace. Silent on failure (e.g. never analyzed yet).
-  const repoPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (repoPath) {
-    void codeLensProvider.refresh(repoPath);
+  // workspace. Silent on failure (e.g. never analyzed yet). In a
+  // multi-root workspace, prime the cache for every folder — the
+  // CodeLensProvider looks up by the folder that actually owns the open
+  // document, not just the first one.
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    void codeLensProvider.refresh(folder.uri.fsPath);
   }
 }
 
 export function deactivate() {}
 
-function currentWorkspacePath(): string | undefined {
+/**
+ * Resolves which workspace folder a command should act on: the folder
+ * containing the active editor's file if there is one (correct behavior
+ * in a multi-root workspace), the sole folder if there's only one, or a
+ * picker if there are several and no active editor to disambiguate from.
+ */
+async function currentWorkspacePath(): Promise<string | undefined> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     vscode.window.showErrorMessage("RepoLens: open a folder or workspace first.");
     return undefined;
   }
-  // Multi-root workspaces: default to the first folder. Good enough for
-  // v1 — most repos analyzed with RepoLens are single-root.
-  return folders[0].uri.fsPath;
+  if (folders.length === 1) {
+    return folders[0].uri.fsPath;
+  }
+
+  const activeUri = vscode.window.activeTextEditor?.document.uri;
+  if (activeUri) {
+    const owning = vscode.workspace.getWorkspaceFolder(activeUri);
+    if (owning) return owning.uri.fsPath;
+  }
+
+  const picked = await vscode.window.showWorkspaceFolderPick({ placeHolder: "Which workspace folder should RepoLens use?" });
+  return picked?.uri.fsPath;
 }
 
 async function withErrorHandling<T>(action: () => Promise<T>): Promise<T | undefined> {
@@ -58,7 +84,7 @@ async function withErrorHandling<T>(action: () => Promise<T>): Promise<T | undef
 }
 
 async function runAnalyze() {
-  const repoPath = currentWorkspacePath();
+  const repoPath = await currentWorkspacePath();
   if (!repoPath) return;
 
   await withErrorHandling(async () => {
@@ -72,7 +98,7 @@ async function runAnalyze() {
 }
 
 async function runCoupling() {
-  const repoPath = currentWorkspacePath();
+  const repoPath = await currentWorkspacePath();
   if (!repoPath) return;
 
   const scores = await withErrorHandling(() => client.coupling(repoPath, 20));
@@ -118,7 +144,7 @@ function displayName(symbolOrId: string): string {
 }
 
 async function runImpact(symbolArg?: string) {
-  const repoPath = currentWorkspacePath();
+  const repoPath = await currentWorkspacePath();
   if (!repoPath) return;
 
   const symbol = symbolArg ?? (await symbolAtCursor());
@@ -148,7 +174,7 @@ async function runImpact(symbolArg?: string) {
 }
 
 async function runFlow(symbolArg?: string) {
-  const repoPath = currentWorkspacePath();
+  const repoPath = await currentWorkspacePath();
   if (!repoPath) return;
 
   const symbol = symbolArg ?? (await symbolAtCursor());
@@ -161,36 +187,37 @@ async function runFlow(symbolArg?: string) {
 }
 
 function showFlowPanel(symbol: string, ascii: string, mermaid: string) {
+  const mediaDir = vscode.Uri.joinPath(extensionUri, "media");
   const panel = vscode.window.createWebviewPanel(
     "repolensFlow",
     `RepoLens: flow of ${symbol}`,
     vscode.ViewColumn.Beside,
-    { enableScripts: true }
+    { enableScripts: true, localResourceRoots: [mediaDir] }
   );
-  panel.webview.html = flowHtml(symbol, ascii, mermaid);
+  const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "mermaid.min.js"));
+  panel.webview.html = flowHtml(panel.webview, symbol, ascii, mermaid, mermaidUri);
 }
 
-// NOTE: loads mermaid.js from a CDN, so the diagram render needs network
-// access — the graph computation itself (repolens flow --json) is fully
-// local/offline. Bundling mermaid.js into the extension would remove this
-// last network dependency; left as a follow-up since it doesn't affect
-// RepoLens's core privacy guarantee (only the diagram *renderer* is
-// remote, no code or graph data is sent anywhere).
-function flowHtml(symbol: string, ascii: string, mermaid: string): string {
+// Renders the flow diagram using mermaid.js vendored into media/ at build
+// time (see scripts/copy-mermaid.js) rather than loaded from a CDN, so the
+// panel works fully offline and needs no CSP exception for a remote host
+// — matching RepoLens's local-first stance end to end, not just in the
+// graph computation.
+function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermaid: string, mermaidUri: vscode.Uri): string {
   const escapedAscii = ascii.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const escapedMermaid = mermaid.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://cdn.jsdelivr.net;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource}; style-src 'unsafe-inline';">
 <style>
   body { font-family: var(--vscode-font-family); padding: 1rem; color: var(--vscode-foreground); }
   pre { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; overflow-x: auto; }
   h2 { font-weight: 600; }
 </style>
-<script type="module">
-  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+<script src="${mermaidUri}"></script>
+<script>
   mermaid.initialize({ startOnLoad: true, theme: "dark" });
 </script>
 </head>
@@ -204,7 +231,7 @@ function flowHtml(symbol: string, ascii: string, mermaid: string): string {
 }
 
 async function runAsk() {
-  const repoPath = currentWorkspacePath();
+  const repoPath = await currentWorkspacePath();
   if (!repoPath) return;
 
   const question = await vscode.window.showInputBox({

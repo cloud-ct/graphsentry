@@ -39,7 +39,17 @@ export class RepoLensCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
+  /** Forces VS Code to re-request CodeLenses without refetching data —
+   * used when the "repolens.codeLens.enabled" setting changes, since that
+   * only affects rendering, not the underlying coupling data. */
+  notifyChanged(): void {
+    this._onDidChangeCodeLenses.fire();
+  }
+
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    const enabled = vscode.workspace.getConfiguration("repolens").get<boolean>("codeLens.enabled", true);
+    if (!enabled) return [];
+
     const folder = vscode.workspace.getWorkspaceFolder(document.uri);
     if (!folder) return [];
     const repoPath = folder.uri.fsPath;
