@@ -56,19 +56,10 @@ func (b *Builder) AddFile(fa *parser.FileAnalysis) {
 	}
 }
 
-// pending holds deferred edges (calls, implements, imports) collected
-// during AddFile passes, resolved once all files are registered.
-type pending struct {
-	fromID   string
-	fromPath string
-	callName string
-	implName string
-	imports  []parser.Import
-}
-
-// analyses accumulates raw FileAnalysis + symbol->id mapping needed for a
-// second resolution pass. Build() should be called with the same list of
-// analyses passed to AddFile.
+// Build registers every file's symbols (AddFile) and then resolves
+// imports/calls/implements against the now-complete symbol index. It must
+// be called with the full list of analyses for a repo in one pass — calls
+// are only resolved against symbols known at resolution time.
 func (b *Builder) Build(analyses []*parser.FileAnalysis) *Graph {
 	for _, fa := range analyses {
 		b.AddFile(fa)

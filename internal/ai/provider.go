@@ -105,12 +105,12 @@ without any key. "ask" needs an LLM you bring yourself (BYOK). Configure one:
   export OLLAMA_HOST=http://localhost:11434
 
 You can also set these in ~/.repolens/config.yaml. See the README's
-"Configuration (BYOK)" section for details.`)
+"Configuration (BYOK)" section for details`) //nolint:staticcheck // this is long-form help text, not a typical wrapped error
 	}
 }
 
 func noKeyErr(provider, envVar, whereToGet string) error {
-	return fmt.Errorf("REPOLENS_PROVIDER=%s but %s is not set.\nGet a key at %s and export it as %s.", provider, envVar, whereToGet, envVar)
+	return fmt.Errorf("REPOLENS_PROVIDER=%s but %s is not set\nGet a key at %s and export it as %s", provider, envVar, whereToGet, envVar)
 }
 
 // SerializeSubgraph renders a subgraph as compact text for the LLM prompt:

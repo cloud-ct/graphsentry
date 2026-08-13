@@ -23,7 +23,7 @@ func OpenStore(path string) (*Store, error) {
 	}
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return s, nil
@@ -83,7 +83,7 @@ func (s *Store) Save(g *Graph) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // no-op once Commit succeeds
 
 	if _, err := tx.Exec(`DELETE FROM nodes`); err != nil {
 		return err
@@ -96,7 +96,7 @@ func (s *Store) Save(g *Graph) error {
 	if err != nil {
 		return err
 	}
-	defer nodeStmt.Close()
+	defer func() { _ = nodeStmt.Close() }()
 	for _, n := range g.Nodes {
 		if _, err := nodeStmt.Exec(n.ID, string(n.Kind), n.Name, n.File, n.Language, n.StartLine, n.EndLine, n.Signature, n.DocComment); err != nil {
 			return fmt.Errorf("insert node %s: %w", n.ID, err)
@@ -107,7 +107,7 @@ func (s *Store) Save(g *Graph) error {
 	if err != nil {
 		return err
 	}
-	defer edgeStmt.Close()
+	defer func() { _ = edgeStmt.Close() }()
 	for _, e := range g.Edges {
 		if _, err := edgeStmt.Exec(e.From, e.To, string(e.Kind)); err != nil {
 			return fmt.Errorf("insert edge %s->%s: %w", e.From, e.To, err)
@@ -129,14 +129,14 @@ func (s *Store) Load() (*Graph, error) {
 		n := &Node{}
 		var sig, doc sql.NullString
 		if err := rows.Scan(&n.ID, &n.Kind, &n.Name, &n.File, &n.Language, &n.StartLine, &n.EndLine, &sig, &doc); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		n.Signature = sig.String
 		n.DocComment = doc.String
 		g.Nodes[n.ID] = n
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -148,12 +148,12 @@ func (s *Store) Load() (*Graph, error) {
 	for erows.Next() {
 		e := &Edge{}
 		if err := erows.Scan(&e.From, &e.To, &e.Kind); err != nil {
-			erows.Close()
+			_ = erows.Close()
 			return nil, err
 		}
 		g.Edges = append(g.Edges, e)
 	}
-	erows.Close()
+	_ = erows.Close()
 	if err := erows.Err(); err != nil {
 		return nil, err
 	}

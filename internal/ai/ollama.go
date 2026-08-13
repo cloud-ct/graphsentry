@@ -66,9 +66,9 @@ func (p *ollamaProvider) Ask(ctx context.Context, req AskRequest) (*AskResponse,
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("could not reach Ollama at %s: %w\nIs it running? Start it with `ollama serve` and pull a model with `ollama pull %s`.", p.host, err, p.model)
+		return nil, fmt.Errorf("could not reach Ollama at %s: %w\nIs it running? Start it with `ollama serve` and pull a model with `ollama pull %s`", p.host, err, p.model)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {

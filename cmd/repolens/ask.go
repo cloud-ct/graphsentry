@@ -34,7 +34,7 @@ func newAskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 			g, err := store.Load()
 			if err != nil {
 				return err

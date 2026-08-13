@@ -72,7 +72,7 @@ func (p *openAIProvider) Ask(ctx context.Context, req AskRequest) (*AskResponse,
 	if err != nil {
 		return nil, fmt.Errorf("openai request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -88,7 +88,7 @@ func runAnalyze(target, branch, token string) error {
 	if err != nil {
 		return fmt.Errorf("open graph store: %w", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if err := store.Save(g); err != nil {
 		return fmt.Errorf("save graph: %w", err)
 	}
