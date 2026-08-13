@@ -1,0 +1,31 @@
+name: VSCode Extension
+
+on:
+  push:
+    branches: [main]
+    paths: ["editors/vscode/**"]
+  pull_request:
+    paths: ["editors/vscode/**"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+      - run: npm run compile
+      - run: cp ../../LICENSE .
+      - run: npx vsce package --no-dependencies
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repolens-vscode-extension
+          path: editors/vscode/*.vsix

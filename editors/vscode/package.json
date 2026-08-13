@@ -1,0 +1,105 @@
+{
+  "name": "repolens",
+  "displayName": "RepoLens",
+  "description": "Local-first, multi-language code graph explorer. Ask architecture questions, see impact analysis and call-flow diagrams, right inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "coding-tironi",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/huandertironi/repolens.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/huandertironi/repolens/issues"
+  },
+  "homepage": "https://github.com/huandertironi/repolens#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "code graph",
+    "architecture",
+    "impact analysis",
+    "coupling",
+    "mermaid",
+    "BYOK"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "repolens.analyze",
+        "title": "RepoLens: Analyze Workspace",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "repolens.coupling",
+        "title": "RepoLens: Show Most Coupled Symbols"
+      },
+      {
+        "command": "repolens.impact",
+        "title": "RepoLens: Impact Analysis for Symbol at Cursor"
+      },
+      {
+        "command": "repolens.flow",
+        "title": "RepoLens: Show Call Flow for Symbol at Cursor"
+      },
+      {
+        "command": "repolens.ask",
+        "title": "RepoLens: Ask a Question About This Codebase"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "repolens.impact",
+          "group": "repolens",
+          "when": "editorHasSelection == false"
+        },
+        {
+          "command": "repolens.flow",
+          "group": "repolens"
+        }
+      ],
+      "commandPalette": [
+        { "command": "repolens.analyze" },
+        { "command": "repolens.coupling" },
+        { "command": "repolens.impact" },
+        { "command": "repolens.flow" },
+        { "command": "repolens.ask" }
+      ]
+    },
+    "configuration": {
+      "title": "RepoLens",
+      "properties": {
+        "repolens.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a repolens binary to use instead of the extension's auto-downloaded copy. Leave empty to let the extension manage it."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.4.0"
+  }
+}
