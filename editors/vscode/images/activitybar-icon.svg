@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <!-- Activity bar icons must be monochrome; VS Code recolors via
+       currentColor to match the active theme. Mirrors the app icon's
+       "connected nodes + magnifier" motif in a simplified line-art form
+       legible at 24px. -->
+  <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+    <line x1="4" y1="4" x2="4" y2="19" />
+    <line x1="4" y1="19" x2="10" y2="19" />
+  </g>
+  <circle cx="4" cy="4" r="1.6" fill="currentColor" />
+  <circle cx="4" cy="11.5" r="1.6" fill="currentColor" />
+  <circle cx="4" cy="19" r="1.6" fill="currentColor" />
+  <circle cx="10" cy="19" r="1.6" fill="currentColor" />
+  <circle cx="16.5" cy="10.5" r="5.2" stroke="currentColor" stroke-width="1.6" />
+  <line x1="20.2" y1="14.2" x2="23" y2="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+</svg>

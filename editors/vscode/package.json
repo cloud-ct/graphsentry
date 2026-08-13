@@ -57,6 +57,14 @@
       {
         "command": "repolens.ask",
         "title": "RepoLens: Ask a Question About This Codebase"
+      },
+      {
+        "command": "repolens.configureProvider",
+        "title": "RepoLens: Configure LLM Provider (API Key for Ask)"
+      },
+      {
+        "command": "repolens.clearProvider",
+        "title": "RepoLens: Clear LLM Provider Configuration"
       }
     ],
     "menus": {
@@ -76,7 +84,26 @@
         { "command": "repolens.coupling" },
         { "command": "repolens.impact" },
         { "command": "repolens.flow" },
-        { "command": "repolens.ask" }
+        { "command": "repolens.ask" },
+        { "command": "repolens.configureProvider" },
+        { "command": "repolens.clearProvider" }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "repolens",
+          "title": "RepoLens",
+          "icon": "images/activitybar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "repolens": [
+        {
+          "id": "repolens.commands",
+          "name": "Commands"
+        }
       ]
     },
     "configuration": {

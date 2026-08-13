@@ -66,16 +66,21 @@ export class RepoLensCodeLensProvider implements vscode.CodeLensProvider {
       const line = Math.max(0, (s.node.start_line || 1) - 1);
       const range = new vscode.Range(line, 0, line, 0);
 
+      // Plain text, no $(codicon) prefix: CodeLens titles render codicons
+      // flush against the following text with no automatic gap, which
+      // reads as glued-together at typical font sizes. Not worth fighting
+      // with manual padding characters that'd look inconsistent across
+      // themes/fonts — plain text is the more reliable choice here.
       lenses.push(
         new vscode.CodeLens(range, {
-          title: `$(references) ${s.fan_in} dependent${s.fan_in === 1 ? "" : "s"} · ${s.fan_out} dependenc${s.fan_out === 1 ? "y" : "ies"}`,
+          title: `${s.fan_in} dependent${s.fan_in === 1 ? "" : "s"} · ${s.fan_out} dependenc${s.fan_out === 1 ? "y" : "ies"}`,
           command: "repolens.impact",
           arguments: [s.node.id],
         })
       );
       lenses.push(
         new vscode.CodeLens(range, {
-          title: "$(graph) Show flow",
+          title: "Show flow",
           command: "repolens.flow",
           arguments: [s.node.id],
         })

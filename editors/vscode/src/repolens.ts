@@ -6,6 +6,7 @@
 import * as vscode from "vscode";
 import { execFile } from "child_process";
 import { getBinaryPath } from "./binaryManager";
+import { resolveProviderEnv } from "./config";
 
 export interface GraphNode {
   id: string;
@@ -79,8 +80,14 @@ export class RepoLensClient {
 
   private async run(args: string[]): Promise<string> {
     const bin = await getBinaryPath(this.context);
+    // Provider env vars (REPOLENS_PROVIDER + the matching key/host) come
+    // from the extension's own config (SecretStorage-backed — see
+    // config.ts), not from the user's shell environment, so "Ask" works
+    // the same whether or not repolens was ever configured outside VS
+    // Code. Harmless to pass on every command, not just ask.
+    const providerEnv = await resolveProviderEnv(this.context);
     return new Promise((resolve, reject) => {
-      execFile(bin, args, { maxBuffer: 1024 * 1024 * 64 }, (err, stdout, stderr) => {
+      execFile(bin, args, { maxBuffer: 1024 * 1024 * 64, env: { ...process.env, ...providerEnv } }, (err, stdout, stderr) => {
         if (err) {
           const message = stderr.trim() || err.message;
           reject(new RepoLensError(message));

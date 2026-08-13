@@ -1,13 +1,17 @@
 import * as vscode from "vscode";
 import { RepoLensClient, RepoLensError } from "./repolens";
 import { RepoLensCodeLensProvider } from "./codeLensProvider";
+import { configureProvider, clearProvider, hasProviderConfigured } from "./config";
+import { RepoLensSidebarProvider } from "./sidebarView";
 
 let client: RepoLensClient;
 let outputChannel: vscode.OutputChannel;
 let codeLensProvider: RepoLensCodeLensProvider;
 let extensionUri: vscode.Uri;
+let extContext: vscode.ExtensionContext;
 
 export function activate(context: vscode.ExtensionContext) {
+  extContext = context;
   extensionUri = context.extensionUri;
   client = new RepoLensClient(context);
   outputChannel = vscode.window.createOutputChannel("RepoLens");
@@ -16,6 +20,9 @@ export function activate(context: vscode.ExtensionContext) {
   codeLensProvider = new RepoLensCodeLensProvider(client);
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider({ scheme: "file" }, codeLensProvider)
+  );
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider("repolens.commands", new RepoLensSidebarProvider())
   );
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -30,7 +37,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("repolens.coupling", () => runCoupling()),
     vscode.commands.registerCommand("repolens.impact", (symbol?: string) => runImpact(symbol)),
     vscode.commands.registerCommand("repolens.flow", (symbol?: string) => runFlow(symbol)),
-    vscode.commands.registerCommand("repolens.ask", () => runAsk())
+    vscode.commands.registerCommand("repolens.ask", () => runAsk()),
+    vscode.commands.registerCommand("repolens.configureProvider", () => configureProvider(context)),
+    vscode.commands.registerCommand("repolens.clearProvider", () => clearProvider(context))
   );
 
   // Pick up a repo analyzed in a previous session so CodeLenses appear
@@ -233,6 +242,16 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
 async function runAsk() {
   const repoPath = await currentWorkspacePath();
   if (!repoPath) return;
+
+  if (!hasProviderConfigured(extContext)) {
+    const choice = await vscode.window.showInformationMessage(
+      "RepoLens: 'Ask' needs an LLM provider configured (BYOK — bring your own key). This is only needed once.",
+      "Configure now"
+    );
+    if (choice !== "Configure now") return;
+    await configureProvider(extContext);
+    if (!hasProviderConfigured(extContext)) return; // user cancelled the picker
+  }
 
   const question = await vscode.window.showInputBox({
     prompt: "Ask a question about this codebase's architecture",
