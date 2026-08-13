@@ -1,0 +1,90 @@
+name: Release
+
+# Builds the repolens CLI for every OS/arch the VSCode extension needs to
+# auto-download, and attaches them to a GitHub Release. Triggered by
+# pushing a tag like v0.1.0.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-latest
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install arm64 cross-compiler
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install MinGW (CGO needs a C compiler on Windows)
+        if: matrix.os == 'windows'
+        run: choco install mingw -y
+
+      - name: Build
+        shell: bash
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          # CGO is required by the tree-sitter grammars (parser package).
+          # Same-OS runners handle same-arch builds natively; the one
+          # cross-arch case (linux/arm64 on an x86_64 runner) uses an
+          # explicit cross-compiler installed above.
+          CGO_ENABLED: 1
+        run: |
+          if [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+          fi
+          ext=""
+          if [ "${{ matrix.os }}" = "windows" ]; then ext=".exe"; fi
+          name="repolens-${{ matrix.os }}-${{ matrix.arch }}${ext}"
+          go build -ldflags="-s -w" -o "dist/${name}" ./cmd/repolens
+          echo "ASSET=dist/${name}" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repolens-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ env.ASSET }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
