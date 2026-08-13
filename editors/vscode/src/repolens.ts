@@ -12,11 +12,20 @@ export interface GraphNode {
   id: string;
   kind: string;
   name: string;
+  qualified: string; // class/type-scoped name, e.g. "AppService.GetAllAsync" — prefer this over name for display
   file: string;
   language: string;
   start_line: number;
   end_line: number;
   signature?: string;
+}
+
+/** Prefers a node's class/type-scoped name over its bare name — two
+ * different symbols in different classes/layers can share a bare method
+ * name (a service delegating to a repository method of the same name is
+ * common), which would otherwise look like a node calling itself. */
+export function displayName(node: GraphNode): string {
+  return node.qualified || node.name;
 }
 
 export interface ImpactedNode {

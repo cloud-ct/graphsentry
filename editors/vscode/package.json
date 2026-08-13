@@ -123,10 +123,10 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile && npm run copy-mermaid",
+    "vscode:prepublish": "npm run compile && npm run copy-assets",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "copy-mermaid": "node ./scripts/copy-mermaid.js",
+    "copy-assets": "node ./scripts/copy-assets.js",
     "package": "vsce package"
   },
   "devDependencies": {
@@ -134,6 +134,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.1",
     "mermaid": "^10.9.1",
+    "svg-pan-zoom": "^3.6.2",
     "typescript": "^5.4.0"
   }
 }

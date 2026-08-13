@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { RepoLensClient, RepoLensError } from "./repolens";
+import { RepoLensClient, RepoLensError, displayName } from "./repolens";
 import { RepoLensCodeLensProvider } from "./codeLensProvider";
 import { configureProvider, clearProvider, hasProviderConfigured } from "./config";
 import { RepoLensSidebarProvider } from "./sidebarView";
@@ -119,7 +119,7 @@ async function runCoupling() {
   }
 
   const items = scores.map((s) => ({
-    label: `${s.node.name}`,
+    label: displayName(s.node),
     description: `${s.node.kind} · fan-in ${s.fan_in} · fan-out ${s.fan_out} · total ${s.total}`,
     detail: s.node.file,
     node: s.node,
@@ -146,8 +146,10 @@ async function symbolAtCursor(): Promise<string | undefined> {
 }
 
 // CodeLens commands pass the full internal node ID ("symbol::path::Qualified.Name")
-// so the CLI resolves unambiguously; for display, show just the trailing name.
-function displayName(symbolOrId: string): string {
+// so the CLI resolves unambiguously; for display before the CLI has
+// resolved it to a full GraphNode (i.e. we still only have the ID/name
+// string, not the node), show just the trailing qualified part.
+function symbolLabel(symbolOrId: string): string {
   const parts = symbolOrId.split("::");
   return parts[parts.length - 1];
 }
@@ -163,19 +165,19 @@ async function runImpact(symbolArg?: string) {
   if (!result) return;
 
   if (result.impacted.length === 0) {
-    vscode.window.showInformationMessage(`RepoLens: nothing depends on "${displayName(symbol)}" — safe to change in isolation.`);
+    vscode.window.showInformationMessage(`RepoLens: nothing depends on "${symbolLabel(symbol)}" — safe to change in isolation.`);
     return;
   }
 
   const items = result.impacted.map((i) => ({
-    label: `${"  ".repeat(i.distance - 1)}↳ ${i.node.name}`,
+    label: `${"  ".repeat(i.distance - 1)}↳ ${displayName(i.node)}`,
     description: `depth ${i.distance} · via ${i.via} · ${i.node.kind}`,
     detail: i.node.file,
     node: i.node,
   }));
 
   const picked = await vscode.window.showQuickPick(items, {
-    title: `What depends on "${displayName(symbol)}" (${result.impacted.length} impacted)`,
+    title: `What depends on "${symbolLabel(symbol)}" (${result.impacted.length} impacted)`,
   });
   if (picked) {
     await openNode(repoPath, picked.node);
@@ -192,7 +194,7 @@ async function runFlow(symbolArg?: string) {
   const result = await withErrorHandling(() => client.flow(repoPath, symbol));
   if (!result) return;
 
-  showFlowPanel(displayName(symbol), result.ascii, result.mermaid);
+  showFlowPanel(symbolLabel(symbol), result.ascii, result.mermaid);
 }
 
 function showFlowPanel(symbol: string, ascii: string, mermaid: string) {
@@ -204,37 +206,85 @@ function showFlowPanel(symbol: string, ascii: string, mermaid: string) {
     { enableScripts: true, localResourceRoots: [mediaDir] }
   );
   const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "mermaid.min.js"));
-  panel.webview.html = flowHtml(panel.webview, symbol, ascii, mermaid, mermaidUri);
+  const panZoomUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "svg-pan-zoom.min.js"));
+  panel.webview.html = flowHtml(panel.webview, symbol, ascii, mermaid, mermaidUri, panZoomUri);
 }
 
-// Renders the flow diagram using mermaid.js vendored into media/ at build
-// time (see scripts/copy-mermaid.js) rather than loaded from a CDN, so the
-// panel works fully offline and needs no CSP exception for a remote host
-// — matching RepoLens's local-first stance end to end, not just in the
-// graph computation.
-function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermaid: string, mermaidUri: vscode.Uri): string {
+/** A fresh per-render nonce, required to let the inline <script> block
+ * (which sets up mermaid + svg-pan-zoom) run under a strict CSP that
+ * otherwise blocks inline scripts — the standard VS Code webview pattern,
+ * safer than 'unsafe-inline' since it only whitelists this exact script. */
+function nonce(): string {
+  let text = "";
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 32; i++) {
+    text += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return text;
+}
+
+// Renders the flow diagram using mermaid.js + svg-pan-zoom, both vendored
+// into media/ at build time (see scripts/copy-assets.js) rather than
+// loaded from a CDN, so the panel works fully offline and needs no CSP
+// exception for a remote host — matching RepoLens's local-first stance end
+// to end, not just in the graph computation.
+//
+// mermaid.render() (not the startOnLoad auto-scan) is used deliberately:
+// it returns a promise that resolves once the SVG actually exists, which
+// is the point at which svg-pan-zoom can safely attach to it — wiring
+// svg-pan-zoom to a still-rendering or not-yet-existing SVG is a race
+// startOnLoad doesn't give a clean hook to avoid.
+function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermaid: string, mermaidUri: vscode.Uri, panZoomUri: vscode.Uri): string {
   const escapedAscii = ascii.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const escapedMermaid = mermaid.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const cspNonce = nonce();
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource}; style-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource} 'nonce-${cspNonce}'; style-src 'unsafe-inline';">
 <style>
   body { font-family: var(--vscode-font-family); padding: 1rem; color: var(--vscode-foreground); }
   pre { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; overflow-x: auto; }
   h2 { font-weight: 600; }
+  #graphContainer {
+    background: var(--vscode-textCodeBlock-background);
+    border-radius: 6px;
+    height: 70vh;
+    /* svg-pan-zoom takes over wheel/drag on the SVG itself; the
+       container just needs to clip it and give it room to breathe. */
+    overflow: hidden;
+  }
+  #graphContainer svg { width: 100%; height: 100%; }
+  .hint { opacity: 0.65; font-size: 0.85em; margin: 0.25rem 0 0.75rem; }
 </style>
-<script src="${mermaidUri}"></script>
-<script>
-  mermaid.initialize({ startOnLoad: true, theme: "dark" });
-</script>
+<script nonce="${cspNonce}" src="${mermaidUri}"></script>
+<script nonce="${cspNonce}" src="${panZoomUri}"></script>
 </head>
 <body>
   <h2>Call flow: ${symbol}</h2>
-  <pre class="mermaid">${escapedMermaid}</pre>
+  <p class="hint">Scroll to zoom, drag to pan.</p>
+  <div id="graphContainer"></div>
   <h2>ASCII</h2>
   <pre>${escapedAscii}</pre>
+  <script nonce="${cspNonce}">
+    const graphDefinition = ${JSON.stringify(mermaid)};
+    mermaid.initialize({ startOnLoad: false, theme: "dark" });
+    mermaid.render("repolensFlowSvg", graphDefinition).then(({ svg }) => {
+      const container = document.getElementById("graphContainer");
+      container.innerHTML = svg;
+      const svgEl = container.querySelector("svg");
+      if (svgEl) {
+        svgPanZoom(svgEl, {
+          zoomEnabled: true,
+          controlIconsEnabled: true,
+          fit: true,
+          center: true,
+          minZoom: 0.2,
+          maxZoom: 12,
+        });
+      }
+    });
+  </script>
 </body>
 </html>`;
 }

@@ -31,15 +31,22 @@ const (
 
 // Node is a single entity in the code graph.
 type Node struct {
-	ID         string   `json:"id"` // stable id: "<file>::<qualified name>" or "<file>"
-	Kind       NodeKind `json:"kind"`
-	Name       string   `json:"name"`
-	File       string   `json:"file"` // repo-relative path
-	Language   string   `json:"language"`
-	StartLine  int      `json:"start_line"`
-	EndLine    int      `json:"end_line"`
-	Signature  string   `json:"signature,omitempty"`
-	DocComment string   `json:"doc_comment,omitempty"`
+	ID   string   `json:"id"` // stable id: "<file>::<qualified name>" or "<file>"
+	Kind NodeKind `json:"kind"`
+	Name string   `json:"name"` // simple name, e.g. "GetAllAsync" — ambiguous across classes/services/repositories, so diagrams should prefer Qualified
+	// Qualified is the class/type-scoped name, e.g. "AppService.GetAllAsync"
+	// — for a method/function that's Name prefixed with its enclosing
+	// type; for a type/class/interface/endpoint it equals Name. Diagram
+	// rendering uses this instead of Name so e.g. a service and the
+	// repository it calls, which often share a bare method name, don't
+	// render as if the same node called itself.
+	Qualified  string `json:"qualified"`
+	File       string `json:"file"` // repo-relative path
+	Language   string `json:"language"`
+	StartLine  int    `json:"start_line"`
+	EndLine    int    `json:"end_line"`
+	Signature  string `json:"signature,omitempty"`
+	DocComment string `json:"doc_comment,omitempty"`
 }
 
 // Edge is a directed relationship between two nodes.

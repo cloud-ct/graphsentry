@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS nodes (
 	id          TEXT PRIMARY KEY,
 	kind        TEXT NOT NULL,
 	name        TEXT NOT NULL,
+	qualified   TEXT NOT NULL DEFAULT '',
 	file        TEXT NOT NULL,
 	language    TEXT NOT NULL,
 	start_line  INTEGER NOT NULL,
@@ -71,7 +72,45 @@ CREATE TABLE IF NOT EXISTS meta (
 	value TEXT NOT NULL
 );
 `
-	_, err := s.db.Exec(schema)
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	return s.migrateAddQualifiedColumn()
+}
+
+// migrateAddQualifiedColumn adds the "qualified" column to a nodes table
+// created before it existed. CREATE TABLE IF NOT EXISTS above is a no-op
+// against an existing (pre-migration) database file, so without this a
+// repo analyzed before this column was introduced would hit a column-count
+// mismatch on the next `repolens analyze` instead of just picking up the
+// new column.
+func (s *Store) migrateAddQualifiedColumn() error {
+	rows, err := s.db.Query(`PRAGMA table_info(nodes)`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	hasQualified := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "qualified" {
+			hasQualified = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasQualified {
+		return nil
+	}
+	_, err = s.db.Exec(`ALTER TABLE nodes ADD COLUMN qualified TEXT NOT NULL DEFAULT ''`)
 	return err
 }
 
@@ -92,13 +131,13 @@ func (s *Store) Save(g *Graph) error {
 		return err
 	}
 
-	nodeStmt, err := tx.Prepare(`INSERT INTO nodes (id, kind, name, file, language, start_line, end_line, signature, doc_comment) VALUES (?,?,?,?,?,?,?,?,?)`)
+	nodeStmt, err := tx.Prepare(`INSERT INTO nodes (id, kind, name, qualified, file, language, start_line, end_line, signature, doc_comment) VALUES (?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = nodeStmt.Close() }()
 	for _, n := range g.Nodes {
-		if _, err := nodeStmt.Exec(n.ID, string(n.Kind), n.Name, n.File, n.Language, n.StartLine, n.EndLine, n.Signature, n.DocComment); err != nil {
+		if _, err := nodeStmt.Exec(n.ID, string(n.Kind), n.Name, n.Qualified, n.File, n.Language, n.StartLine, n.EndLine, n.Signature, n.DocComment); err != nil {
 			return fmt.Errorf("insert node %s: %w", n.ID, err)
 		}
 	}
@@ -121,14 +160,14 @@ func (s *Store) Save(g *Graph) error {
 func (s *Store) Load() (*Graph, error) {
 	g := New()
 
-	rows, err := s.db.Query(`SELECT id, kind, name, file, language, start_line, end_line, signature, doc_comment FROM nodes`)
+	rows, err := s.db.Query(`SELECT id, kind, name, qualified, file, language, start_line, end_line, signature, doc_comment FROM nodes`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		n := &Node{}
 		var sig, doc sql.NullString
-		if err := rows.Scan(&n.ID, &n.Kind, &n.Name, &n.File, &n.Language, &n.StartLine, &n.EndLine, &sig, &doc); err != nil {
+		if err := rows.Scan(&n.ID, &n.Kind, &n.Name, &n.Qualified, &n.File, &n.Language, &n.StartLine, &n.EndLine, &sig, &doc); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}

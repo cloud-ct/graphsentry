@@ -127,3 +127,55 @@ func TestInterfaceRoutedCallHasReceiverType(t *testing.T) {
 		t.Errorf("expected a single CreateUserAsync call with ReceiverType IUserService, got %+v", create.Calls)
 	}
 }
+
+// TestPrimaryConstructorParametersAreTypeHints is a regression test for a
+// real confusion found against bankme-ai-main: services there commonly use
+// C# 12 primary constructors — `class AppService(IAppRepository
+// appRepository, ...) : IAppService` — where the parameter is usable like
+// a field throughout the class body. tree-sitter-c-sharp represents this
+// parameter_list as a direct child of class_declaration, distinct from the
+// declaration_list body that classFieldTypes scans, so without explicit
+// handling these parameters got no type hint at all — falling back to the
+// bare-name heuristic, which (since the interface's own abstract method
+// declaration commonly lives in the same file as its implementation)
+// wrongly resolved calls to the interface's stub instead of the real
+// implementation elsewhere in the repo.
+func TestPrimaryConstructorParametersAreTypeHints(t *testing.T) {
+	const src = `public interface IAppRepository {
+    Task<List<App>> GetAllAsync();
+}
+
+public class AppService(IAppRepository appRepository) : IAppService {
+    public async Task<List<AppResponse>> GetAllAsync() {
+        var apps = await appRepository.GetAllAsync();
+        return null;
+    }
+}
+`
+	a := New()
+	fa, err := a.Analyze("appservice.cs", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+	var method *parser.Symbol
+	for i := range fa.Symbols {
+		if fa.Symbols[i].Qualified == "AppService.GetAllAsync" {
+			method = &fa.Symbols[i]
+		}
+	}
+	if method == nil {
+		t.Fatal("expected to find AppService.GetAllAsync method")
+	}
+	var call *parser.CallRef
+	for i := range method.Calls {
+		if method.Calls[i].Name == "GetAllAsync" {
+			call = &method.Calls[i]
+		}
+	}
+	if call == nil {
+		t.Fatal("expected a GetAllAsync call")
+	}
+	if call.ReceiverType != "IAppRepository" {
+		t.Errorf("expected the call through the primary-constructor parameter to carry ReceiverType IAppRepository, got %q", call.ReceiverType)
+	}
+}

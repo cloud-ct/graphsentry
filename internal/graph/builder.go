@@ -44,14 +44,15 @@ func NewBuilder() *Builder {
 // extracted symbol, and "defines" edges from the file to each symbol.
 func (b *Builder) AddFile(fa *parser.FileAnalysis) {
 	fileID := "file::" + fa.Path
-	b.g.AddNode(&Node{ID: fileID, Kind: NodeFile, Name: path.Base(fa.Path), File: fa.Path, Language: fa.Language})
+	fileName := path.Base(fa.Path)
+	b.g.AddNode(&Node{ID: fileID, Kind: NodeFile, Name: fileName, Qualified: fileName, File: fa.Path, Language: fa.Language})
 	b.fileIndex[normalizeFileKey(fa.Path)] = fileID
 
 	for _, sym := range fa.Symbols {
 		id := symbolID(fa.Path, sym.Qualified)
 		kind := nodeKindOf(sym.Kind)
 		b.g.AddNode(&Node{
-			ID: id, Kind: kind, Name: sym.Name, File: fa.Path, Language: fa.Language,
+			ID: id, Kind: kind, Name: sym.Name, Qualified: sym.Qualified, File: fa.Path, Language: fa.Language,
 			StartLine: sym.StartLine, EndLine: sym.EndLine,
 			Signature: sym.Signature, DocComment: sym.DocComment,
 		})

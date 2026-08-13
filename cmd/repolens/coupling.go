@@ -44,7 +44,11 @@ func newCouplingCmd() *cobra.Command {
 			}
 			fmt.Printf("%-40s %-10s %8s %8s %8s\n", "SYMBOL", "KIND", "FAN-IN", "FAN-OUT", "TOTAL")
 			for _, s := range scores {
-				fmt.Printf("%-40s %-10s %8d %8d %8d\n", truncate(s.Node.Name, 40), s.Node.Kind, s.FanIn, s.FanOut, s.Total)
+				name := s.Node.Qualified
+				if name == "" {
+					name = s.Node.Name
+				}
+				fmt.Printf("%-40s %-10s %8d %8d %8d\n", truncate(name, 40), s.Node.Kind, s.FanIn, s.FanOut, s.Total)
 			}
 			return nil
 		},

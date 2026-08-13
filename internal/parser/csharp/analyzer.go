@@ -94,6 +94,14 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 			route := attributeRoute(n, src, "Route")
 			body := n.ChildByFieldName("body")
 			fieldTypes := classFieldTypes(body, src)
+			// Primary constructor parameters (C# 12: `class Foo(IBar bar, ...)`)
+			// are visible throughout the class body exactly like fields —
+			// tree-sitter-c-sharp represents them as a parameter_list that's
+			// a direct (unnamed-field) child of class_declaration itself,
+			// distinct from the declaration_list body scanned above.
+			if primaryCtorParams := findChildOfType(n, "parameter_list"); primaryCtorParams != nil {
+				collectParameterTypes(primaryCtorParams, src, fieldTypes)
+			}
 			if body != nil {
 				for i := 0; i < int(body.ChildCount()); i++ {
 					walkClassMember(body.Child(i), name, route, fieldTypes, fa, src, line, text)
