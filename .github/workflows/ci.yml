@@ -22,12 +22,12 @@ jobs:
         run: go test ./... -race -cover
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           # Pinned explicitly: the action's "latest" resolution has been
           # observed to serve a golangci-lint binary built with an older Go
           # toolchain than go.mod requires (go.mod says 1.25, action
           # resolved v1.64.8 which was built with go1.24 and refuses to
-          # load config for a newer target). Bump this manually when
-          # upgrading Go.
+          # load config for a newer target). golangci-lint v2 requires
+          # golangci-lint-action v7. Bump both manually when upgrading Go.
           version: v2.12.2
