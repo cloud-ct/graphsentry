@@ -1,0 +1,28 @@
+name: Enforce PR Target Branch
+
+# Contributions land in `develop`, never directly in `main` (which only
+# gets updated by the maintainer, via a develop -> main PR). This closes
+# any PR opened against main automatically, with a pointer to retarget it
+# — a technical control, not just a note in CONTRIBUTING.md, since GitHub
+# branch protection has no native "only accept PRs targeting branch X"
+# rule.
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches:
+      - main
+
+jobs:
+  close-pr-against-main:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment and close
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "Pull requests should target \`develop\`, not \`main\` — closing this one. Please retarget it (change the base branch in the PR sidebar) or open a new PR against \`develop\`."
+          gh pr close "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"

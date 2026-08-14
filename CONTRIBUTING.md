@@ -67,3 +67,16 @@ need to touch `internal/graph` or the CLI.
 
 CI runs `go build ./...`, `go test ./...`, and `golangci-lint` on every PR.
 Please make sure all three pass locally first.
+
+**Target `develop`, not `main`.** `develop` is the repo's default branch
+and where all contributions land; `main` only advances via a
+maintainer-initiated `develop` -> `main` PR. A PR opened against `main` is
+closed automatically (see `.github/workflows/enforce-pr-target.yml`) —
+this isn't personal, it's just so history stays predictable. If that
+happens to you, retarget the PR to `develop` (or open a fresh one there)
+and it'll be picked back up.
+
+Only the maintainer merges PRs — both branches require a review before
+merging. Feel free to open issues for bugs, ideas, or questions even if
+you're not planning to submit code; issues are always welcome regardless
+of the PR flow above.
