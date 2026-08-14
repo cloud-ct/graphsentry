@@ -59,7 +59,7 @@ need to touch `internal/graph` or the CLI.
 
 - Keep comments explaining *why*, not restating the code.
 - Errors that a user will see should be actionable (say what to do next),
-  matching the style in `internal/ingest/clone.go` and `internal/ai/provider.go`.
+  matching the style in `internal/ingest/local.go` and `internal/ai/provider.go`.
 - Deterministic commands (`impact`, `coupling`, `flow`, `risk`) must never
   require or call an LLM provider.
 

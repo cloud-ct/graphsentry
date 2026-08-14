@@ -16,41 +16,33 @@ import (
 )
 
 func newAnalyzeCmd() *cobra.Command {
-	var branch, token string
 	cmd := &cobra.Command{
-		Use:   "analyze <url|path>",
-		Short: "Clone (or open) a repository, parse it, and build the local code graph",
+		Use:   "analyze <path>",
+		Short: "Parse a local folder and build its code graph",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target := args[0]
-			if token == "" {
-				token = os.Getenv("GITHUB_TOKEN")
-			}
-			return runAnalyze(target, branch, token)
+			return runAnalyze(args[0])
 		},
 	}
-	cmd.Flags().StringVar(&branch, "branch", "", "branch to check out (default: remote's default branch)")
-	cmd.Flags().StringVar(&token, "token", "", "auth token for HTTPS clone (default: $GITHUB_TOKEN)")
 	return cmd
 }
 
-func runAnalyze(target, branch, token string) error {
-	cloneDir, dbPath, err := repoWorkspace(target)
+func runAnalyze(target string) error {
+	dbPath, err := repoDBPath(target)
 	if err != nil {
 		return fmt.Errorf("prepare workspace: %w", err)
 	}
 
-	fmt.Printf("→ Fetching %s...\n", target)
-	result, err := ingest.Clone(ingest.CloneOptions{URL: target, Branch: branch, Token: token, Dest: cloneDir})
+	commit, err := ingest.OpenLocal(target)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("  ready at %s (commit %s)\n", result.Path, shortHash(result.Commit))
+	fmt.Printf("→ Analyzing %s%s\n", target, commitSuffix(commit))
 
 	registry := parser.NewRegistry(golang.New(), typescript.New(), csharp.New(), python.New())
 	extSet := map[string]bool{".go": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".cs": true, ".py": true}
 
-	files, err := ingest.DiscoverFiles(result.Path, extSet)
+	files, err := ingest.DiscoverFiles(target, extSet)
 	if err != nil {
 		return fmt.Errorf("discover files: %w", err)
 	}
@@ -93,7 +85,7 @@ func runAnalyze(target, branch, token string) error {
 		return fmt.Errorf("save graph: %w", err)
 	}
 	_ = store.SetMeta("target", target)
-	_ = store.SetMeta("commit", result.Commit)
+	_ = store.SetMeta("commit", commit)
 
 	if err := setLastTarget(target); err != nil {
 		return err
@@ -103,9 +95,12 @@ func runAnalyze(target, branch, token string) error {
 	return nil
 }
 
-func shortHash(h string) string {
-	if len(h) > 8 {
-		return h[:8]
+func commitSuffix(commit string) string {
+	if commit == "" {
+		return ""
 	}
-	return h
+	if len(commit) > 8 {
+		commit = commit[:8]
+	}
+	return fmt.Sprintf(" (commit %s)", commit)
 }

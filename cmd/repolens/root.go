@@ -13,10 +13,11 @@ import (
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "repolens",
-		Short: "RepoLens — intelligent Git repository analysis and exploration",
-		Long: "RepoLens clones a repository, builds a multi-language code graph, and lets you\n" +
+		Short: "RepoLens — intelligent, local-first code graph exploration",
+		Long: "RepoLens parses a local folder into a multi-language code graph and lets you\n" +
 			"ask structural questions about its architecture — deterministically via the\n" +
-			"graph, or in natural language via your own LLM key (BYOK).",
+			"graph, or in natural language via your own LLM key (BYOK). Built primarily to\n" +
+			"power the RepoLens VS Code extension, but fully usable standalone.",
 	}
 	root.AddCommand(newAnalyzeCmd())
 	root.AddCommand(newImpactCmd())
@@ -39,26 +40,25 @@ func workspaceRoot() (string, error) {
 	return dir, nil
 }
 
-// repoSlug derives a filesystem-safe, stable identifier for a repo
-// URL/path so each analyzed repo gets its own clone + graph.db under the
-// workspace root.
+// repoSlug derives a filesystem-safe, stable identifier for a local path
+// so each analyzed folder gets its own graph.db under the workspace root.
 func repoSlug(target string) string {
 	sum := sha1.Sum([]byte(target))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// repoWorkspace returns the (cloneDir, dbPath) for a given repo target.
-func repoWorkspace(target string) (cloneDir, dbPath string, err error) {
+// repoDBPath returns the graph.db path for a given analyzed folder.
+func repoDBPath(target string) (string, error) {
 	root, err := workspaceRoot()
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	slug := repoSlug(target)
 	base := filepath.Join(root, slug)
 	if err := os.MkdirAll(base, 0o755); err != nil {
-		return "", "", err
+		return "", err
 	}
-	return filepath.Join(base, "src"), filepath.Join(base, "graph.db"), nil
+	return filepath.Join(base, "graph.db"), nil
 }
 
 // lastTargetFile records the most recently analyzed repo target, so
@@ -104,7 +104,7 @@ func resolveTarget(flagValue string) (string, error) {
 // requireDB resolves target's graph.db path and errors with actionable
 // guidance if it hasn't been analyzed yet.
 func requireDB(target string) (string, error) {
-	_, dbPath, err := repoWorkspace(target)
+	dbPath, err := repoDBPath(target)
 	if err != nil {
 		return "", err
 	}
