@@ -141,14 +141,44 @@ func collectModuleVarTypes(root *sitter.Node, src []byte) map[string]string {
 		}
 		left := assignment.ChildByFieldName("left")
 		right := assignment.ChildByFieldName("right")
-		if left == nil || right == nil || left.Type() != "identifier" || right.Type() != "call" {
+		if left == nil || right == nil || left.Type() != "identifier" {
 			continue
 		}
-		if fn := right.ChildByFieldName("function"); fn != nil && fn.Type() == "identifier" {
-			hints[left.Content(src)] = fn.Content(src)
+		if className, ok := constructedClassName(right, src); ok {
+			hints[left.Content(src)] = className
 		}
 	}
 	return hints
+}
+
+// constructedClassName reports the class being constructed by a call
+// expression, covering both forms Python code uses for this:
+// `ClassName(...)` (function is a bare identifier) and
+// `module_alias.ClassName(...)` (function is an attribute access reaching
+// through an imported module — common when a module is imported directly,
+// e.g. `from pkg import chat_service` importing the *module*
+// chat_service.py, then `chat_service.ChatService()` constructing from
+// it). The attribute form is only trusted when the accessed name is
+// PascalCase (PEP 8: classes are PascalCase, everything else isn't) —
+// otherwise this would misfire on an ordinary method call like
+// `x.get_service()`.
+func constructedClassName(call *sitter.Node, src []byte) (string, bool) {
+	if call.Type() != "call" {
+		return "", false
+	}
+	fn := call.ChildByFieldName("function")
+	if fn == nil {
+		return "", false
+	}
+	switch fn.Type() {
+	case "identifier":
+		return fn.Content(src), true
+	case "attribute":
+		if attr := fn.ChildByFieldName("attribute"); attr != nil && isPascalCase(attr.Content(src)) {
+			return attr.Content(src), true
+		}
+	}
+	return "", false
 }
 
 // isInsideClass reports whether n is nested (directly or via a
@@ -514,12 +544,13 @@ func collectSelfAttrTypes(classBody *sitter.Node, src []byte) map[string]string 
 		if n.Type() == "assignment" {
 			left := n.ChildByFieldName("left")
 			right := n.ChildByFieldName("right")
-			if left != nil && right != nil && left.Type() == "attribute" && right.Type() == "call" {
+			if left != nil && right != nil && left.Type() == "attribute" {
 				obj := left.ChildByFieldName("object")
 				attr := left.ChildByFieldName("attribute")
-				fn := right.ChildByFieldName("function")
-				if obj != nil && attr != nil && fn != nil && obj.Type() == "identifier" && obj.Content(src) == "self" && fn.Type() == "identifier" {
-					hints[attr.Content(src)] = fn.Content(src)
+				if obj != nil && attr != nil && obj.Type() == "identifier" && obj.Content(src) == "self" {
+					if className, ok := constructedClassName(right, src); ok {
+						hints[attr.Content(src)] = className
+					}
 				}
 			}
 		}
@@ -545,9 +576,9 @@ func collectLocalVarTypes(body *sitter.Node, src []byte, hints map[string]string
 		if n.Type() == "assignment" {
 			left := n.ChildByFieldName("left")
 			right := n.ChildByFieldName("right")
-			if left != nil && right != nil && left.Type() == "identifier" && right.Type() == "call" {
-				if fn := right.ChildByFieldName("function"); fn != nil && fn.Type() == "identifier" {
-					hints[left.Content(src)] = fn.Content(src)
+			if left != nil && right != nil && left.Type() == "identifier" {
+				if className, ok := constructedClassName(right, src); ok {
+					hints[left.Content(src)] = className
 				}
 			}
 		}

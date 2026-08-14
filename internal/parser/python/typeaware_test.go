@@ -220,3 +220,43 @@ func TestModuleConstructorCallFallsBackToBareName(t *testing.T) {
 		t.Errorf("expected no receiver type/var (bare-name fallback expected), got %+v", call)
 	}
 }
+
+// TestModuleVarConstructedViaModuleAttribute is a regression test for the
+// exact real-world pattern found in bankme-ai-assistant-service:
+//
+//	from openai_application.service import chat_service
+//	chat_service = chat_service.ChatService()
+//
+// The name `chat_service` is first imported as a *module* (the file
+// chat_service.py), then immediately shadowed at module scope by an
+// instance of the class it defines — constructed by reaching through that
+// same module reference (`chat_service.ChatService()`, an attribute-form
+// call, not the bare `ClassName()` form collectModuleVarTypes originally
+// only recognized). Without handling this form, the module-var registry
+// never learned that `chat_service` was a ChatService instance at all,
+// so calls through it kept falling through to ReceiverVar resolution
+// with no match.
+func TestModuleVarConstructedViaModuleAttribute(t *testing.T) {
+	const src = `from openai_application.service import chat_service
+
+class ChatService:
+    def create_assistant(self):
+        pass
+
+chat_service = chat_service.ChatService()
+`
+	a := New()
+	fa, err := a.Analyze("chat_controller.py", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+	found := false
+	for _, mv := range fa.ModuleVars {
+		if mv.Name == "chat_service" && mv.TypeName == "ChatService" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ModuleVars to include chat_service -> ChatService (via the module-attribute constructor form), got %+v", fa.ModuleVars)
+	}
+}
