@@ -12,6 +12,7 @@ fs.mkdirSync(destDir, { recursive: true });
 const assets = [
   ["mermaid", "dist/mermaid.min.js", "mermaid.min.js"],
   ["svg-pan-zoom", "dist/svg-pan-zoom.min.js", "svg-pan-zoom.min.js"],
+  ["marked", "lib/marked.umd.js", "marked.js"],
 ];
 
 for (const [pkg, relPath, destName] of assets) {

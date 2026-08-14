@@ -12,12 +12,16 @@ interface CommandEntry {
   icon: string;
 }
 
+// "Show Call Flow" and "Ask a Question" are deliberately absent here: both
+// need a specific symbol/context to be useful, which this list — a
+// context-free set of shortcuts — can't supply. The CodeLens above each
+// analyzed symbol opens flow (and, from there, a context-scoped Ask box)
+// directly; a generic entry point here would just re-prompt for what the
+// CodeLens click already knows.
 const ENTRIES: CommandEntry[] = [
   { label: "Analyze Workspace", description: "Build/refresh the code graph", command: "repolens.analyze", icon: "sync" },
   { label: "Most Coupled Symbols", description: "Fan-in + fan-out ranking", command: "repolens.coupling", icon: "graph" },
   { label: "Impact Analysis", description: "Symbol at cursor", command: "repolens.impact", icon: "references" },
-  { label: "Show Call Flow", description: "Symbol at cursor", command: "repolens.flow", icon: "arrow-swap" },
-  { label: "Ask a Question", description: "Natural-language Q&A (BYOK)", command: "repolens.ask", icon: "comment-discussion" },
   { label: "Configure LLM Provider", description: "API key for Ask", command: "repolens.configureProvider", icon: "key" },
 ];
 

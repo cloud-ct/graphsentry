@@ -51,14 +51,6 @@
         "title": "RepoLens: Impact Analysis for Symbol at Cursor"
       },
       {
-        "command": "repolens.flow",
-        "title": "RepoLens: Show Call Flow for Symbol at Cursor"
-      },
-      {
-        "command": "repolens.ask",
-        "title": "RepoLens: Ask a Question About This Codebase"
-      },
-      {
         "command": "repolens.configureProvider",
         "title": "RepoLens: Configure LLM Provider (API Key for Ask)"
       },
@@ -73,20 +65,16 @@
           "command": "repolens.impact",
           "group": "repolens",
           "when": "editorHasSelection == false"
-        },
-        {
-          "command": "repolens.flow",
-          "group": "repolens"
         }
       ],
       "commandPalette": [
         { "command": "repolens.analyze" },
         { "command": "repolens.coupling" },
         { "command": "repolens.impact" },
-        { "command": "repolens.flow" },
-        { "command": "repolens.ask" },
         { "command": "repolens.configureProvider" },
-        { "command": "repolens.clearProvider" }
+        { "command": "repolens.clearProvider" },
+        { "command": "repolens.flow", "when": "false" },
+        { "command": "repolens.ask", "when": "false" }
       ]
     },
     "viewsContainers": {
@@ -133,6 +121,7 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.1",
+    "marked": "^12.0.2",
     "mermaid": "^10.9.1",
     "svg-pan-zoom": "^3.6.2",
     "typescript": "^5.4.0"

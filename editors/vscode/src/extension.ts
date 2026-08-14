@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { RepoLensClient, RepoLensError, displayName, FlowResult } from "./repolens";
+import { RepoLensClient, RepoLensError, displayName, FlowResult, GraphNode } from "./repolens";
 import { RepoLensCodeLensProvider } from "./codeLensProvider";
 import { configureProvider, clearProvider, hasProviderConfigured } from "./config";
 import { RepoLensSidebarProvider } from "./sidebarView";
@@ -36,8 +36,12 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("repolens.analyze", () => runAnalyze()),
     vscode.commands.registerCommand("repolens.coupling", () => runCoupling()),
     vscode.commands.registerCommand("repolens.impact", (symbol?: string) => runImpact(symbol)),
+    // repolens.flow has no palette/menu/sidebar entry (see package.json)
+    // — it's only ever invoked with an explicit symbol id, from a CodeLens
+    // click. repolens.ask no longer exists as a standalone command at
+    // all: the flow panel's own Ask box (scoped to whatever flow is on
+    // screen) replaced it entirely.
     vscode.commands.registerCommand("repolens.flow", (symbol?: string) => runFlow(symbol)),
-    vscode.commands.registerCommand("repolens.ask", () => runAsk()),
     vscode.commands.registerCommand("repolens.configureProvider", () => configureProvider(context)),
     vscode.commands.registerCommand("repolens.clearProvider", () => clearProvider(context))
   );
@@ -130,7 +134,40 @@ async function runCoupling() {
     matchOnDescription: true,
   });
   if (picked) {
-    await openNode(repoPath, picked.node);
+    await followUpOnNode(repoPath, picked.node);
+  }
+}
+
+/**
+ * A ranked list (coupling, impact) only tells you *how much* something is
+ * coupled — jumping straight to its source on pick leaves the *why*
+ * unanswered, since a bare fan-in/fan-out number isn't self-explanatory
+ * out of context. This offers what the number actually invites next:
+ * see what it calls (flow), see what depends on it (impact), or just open
+ * the source directly for those who already know what they're looking
+ * for.
+ */
+async function followUpOnNode(repoPath: string, node: { id: string; file: string; start_line: number }) {
+  const choice = await vscode.window.showQuickPick(
+    [
+      { label: "$(arrow-swap) Show flow", description: "What this calls", action: "flow" },
+      { label: "$(references) Impact analysis", description: "What depends on this", action: "impact" },
+      { label: "$(go-to-file) Open source", description: "", action: "open" },
+    ],
+    { title: displayName(node as GraphNode) }
+  );
+  if (!choice) return;
+
+  switch (choice.action) {
+    case "flow":
+      await runFlow(node.id);
+      return;
+    case "impact":
+      await runImpact(node.id);
+      return;
+    case "open":
+      await openNode(repoPath, node);
+      return;
   }
 }
 
@@ -180,7 +217,7 @@ async function runImpact(symbolArg?: string) {
     title: `What depends on "${symbolLabel(symbol)}" (${result.impacted.length} impacted)`,
   });
   if (picked) {
-    await openNode(repoPath, picked.node);
+    await followUpOnNode(repoPath, picked.node);
   }
 }
 
@@ -207,7 +244,8 @@ function showFlowPanel(repoPath: string, symbol: string, result: FlowResult) {
   );
   const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "mermaid.min.js"));
   const panZoomUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "svg-pan-zoom.min.js"));
-  panel.webview.html = flowHtml(panel.webview, symbol, result, mermaidUri, panZoomUri);
+  const markedUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "marked.js"));
+  panel.webview.html = flowHtml(panel.webview, symbol, result, mermaidUri, panZoomUri, markedUri);
 
   panel.webview.onDidReceiveMessage(async (msg) => {
     switch (msg.command) {
@@ -222,13 +260,17 @@ function showFlowPanel(repoPath: string, symbol: string, result: FlowResult) {
           });
           return;
         }
-        // Scope the question to this flow's root so the CLI's relevance
-        // matching (which works from the question text) is biased toward
-        // the subgraph already on screen, instead of the whole repo.
-        const contextualized = `Regarding the call flow starting at ${symbol}: ${msg.question}`;
         try {
-          const answer = await client.ask(repoPath, contextualized);
-          panel.webview.postMessage({ command: "askResult", answer });
+          // result.root scopes the question directly to this flow's
+          // subgraph (an exact node-ID match on the CLI side) instead of
+          // the CLI re-discovering a subgraph by searching the question's
+          // own keywords across the whole repo — which is what let an
+          // earlier version answer a question about a totally different
+          // endpoint than the one actually on screen.
+          await client.askStream(repoPath, msg.question, result.root, (chunk) => {
+            panel.webview.postMessage({ command: "askChunk", chunk });
+          });
+          panel.webview.postMessage({ command: "askDone" });
         } catch (err) {
           const message = err instanceof RepoLensError ? err.message : String(err);
           panel.webview.postMessage({ command: "askError", message });
@@ -268,7 +310,7 @@ function nonce(): string {
 // (not the CLI's plain-text ASCII string) specifically so each node can
 // carry its file/line and be Ctrl/Cmd+clickable — jumping to source the
 // same way the QuickPicks elsewhere in the extension do.
-function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, mermaidUri: vscode.Uri, panZoomUri: vscode.Uri): string {
+function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, mermaidUri: vscode.Uri, panZoomUri: vscode.Uri, markedUri: vscode.Uri): string {
   const cspNonce = nonce();
   return `<!DOCTYPE html>
 <html>
@@ -287,17 +329,21 @@ function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, m
     color: var(--vscode-foreground);
     padding: 0.75rem 1rem;
     box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
   }
-  pre, #tree { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; overflow: auto; }
+  pre { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; overflow: auto; }
   h2 { font-weight: 600; margin: 0.5rem 0; }
+  code { font-family: var(--vscode-editor-font-family, monospace); }
+
+  /* The diagram stays permanently visible (it's the main event); the call
+     tree is a <details> — collapsed by default, and deliberately no
+     max-height/overflow on its content, so expanding it grows the section
+     inline and the *page* scrolls, instead of trapping the tree in its
+     own little scrollbox. */
+  #graphSection { margin-bottom: 0.75rem; }
   #graphContainer {
     background: var(--vscode-textCodeBlock-background);
     border-radius: 6px;
-    flex: 1 1 auto;
-    min-height: 45vh;
+    height: 55vh;
     width: 100%;
     box-sizing: border-box;
     /* svg-pan-zoom takes over wheel/drag on the SVG itself; the
@@ -306,32 +352,44 @@ function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, m
     position: relative;
   }
   #graphContainer svg { display: block; width: 100%; height: 100%; }
-  #treeSection { flex: 0 0 auto; max-height: 25vh; overflow-y: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em; }
+
+  details { margin-bottom: 0.75rem; }
+  summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; user-select: none; }
+  summary:hover { color: var(--vscode-textLink-foreground); }
+  #tree { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em; margin-top: 0.4rem; }
+
   .hint { opacity: 0.65; font-size: 0.85em; margin: 0 0 0.5rem; }
   .node-line { white-space: pre; }
   .node-link { cursor: pointer; color: var(--vscode-textLink-foreground); }
   .node-link:hover { text-decoration: underline; }
-  #askSection { flex: 0 0 auto; margin-top: 0.75rem; }
+
   #askInput { width: 100%; box-sizing: border-box; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 0.5rem; font-family: inherit; resize: vertical; }
   #askButton { margin-top: 0.4rem; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; padding: 0.4rem 0.9rem; cursor: pointer; }
   #askButton:hover { background: var(--vscode-button-hoverBackground); }
   #askButton:disabled { opacity: 0.6; cursor: default; }
-  #askAnswer { margin-top: 0.6rem; white-space: pre-wrap; }
+  #askAnswer { margin-top: 0.6rem; }
   #askAnswer:empty { display: none; }
+  #askAnswer :first-child { margin-top: 0; }
+  #askAnswer .mermaid-diagram { background: var(--vscode-textCodeBlock-background); border-radius: 6px; padding: 0.75rem; margin: 0.5rem 0; }
+  #askAnswer .mermaid-diagram svg { max-width: 100%; height: auto; }
 </style>
 <script nonce="${cspNonce}" src="${mermaidUri}"></script>
 <script nonce="${cspNonce}" src="${panZoomUri}"></script>
+<script nonce="${cspNonce}" src="${markedUri}"></script>
 </head>
 <body>
   <h2>Call flow: ${symbol}</h2>
-  <p class="hint">Scroll to zoom, drag to pan.</p>
-  <div id="graphContainer"></div>
 
-  <div id="treeSection">
-    <h2>Call tree</h2>
+  <div id="graphSection">
+    <p class="hint">Scroll to zoom, drag to pan.</p>
+    <div id="graphContainer"></div>
+  </div>
+
+  <details id="treeDetails">
+    <summary>Call tree</summary>
     <p class="hint">Ctrl/Cmd+click a name to open it.</p>
     <div id="tree"></div>
-  </div>
+  </details>
 
   <div id="askSection">
     <h2>Ask about this flow</h2>
@@ -457,22 +515,79 @@ function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, m
       document.getElementById("tree").textContent = "(no outgoing calls found)";
     }
 
+    // --- Ask box: streamed, markdown+mermaid rendered -------------------
+
     const askButton = document.getElementById("askButton");
     const askInput = document.getElementById("askInput");
     const askAnswer = document.getElementById("askAnswer");
+    let askBuffer = "";
+    let mermaidDiagramCounter = 0;
+
+    // Splits the raw answer text around *complete* \`\`\`mermaid ... \`\`\`
+    // fences. An in-progress (not yet closed) fence is left as trailing
+    // plain text — rendering half-written Mermaid syntax as a diagram
+    // isn't meaningful, so it just reads as growing text until the fence
+    // closes, same as any other markdown while it's mid-stream.
+    function splitMermaidBlocks(text) {
+      const parts = [];
+      const re = /\`\`\`mermaid\\n([\\s\\S]*?)\`\`\`/g;
+      let lastIndex = 0, m;
+      while ((m = re.exec(text))) {
+        parts.push({ type: "md", content: text.slice(lastIndex, m.index) });
+        parts.push({ type: "mermaid", content: m[1] });
+        lastIndex = re.lastIndex;
+      }
+      parts.push({ type: "md", content: text.slice(lastIndex) });
+      return parts;
+    }
+
+    // Re-renders the full accumulated answer on every chunk. Answers are
+    // short enough (a few KB) that a full rebuild per chunk is cheap —
+    // simpler and more robust than trying to incrementally patch markdown
+    // DOM, at the cost of the answer area re-flowing slightly on each
+    // update rather than only appending.
+    async function renderAskAnswer(text) {
+      const parts = splitMermaidBlocks(text);
+      askAnswer.innerHTML = "";
+      for (const part of parts) {
+        if (part.type === "md") {
+          if (!part.content.trim()) continue;
+          const div = document.createElement("div");
+          div.innerHTML = marked.parse(part.content);
+          askAnswer.appendChild(div);
+        } else {
+          const container = document.createElement("div");
+          container.className = "mermaid-diagram";
+          askAnswer.appendChild(container);
+          try {
+            const { svg } = await mermaid.render("askMermaid" + mermaidDiagramCounter++, part.content);
+            container.innerHTML = svg;
+          } catch {
+            // Model produced something mermaid.js couldn't parse — fall
+            // back to showing it as a code block rather than losing it.
+            const pre = document.createElement("pre");
+            pre.textContent = part.content;
+            container.appendChild(pre);
+          }
+        }
+      }
+    }
 
     askButton.addEventListener("click", () => {
       const question = askInput.value.trim();
       if (!question) return;
       askButton.disabled = true;
-      askAnswer.textContent = "Thinking...";
+      askBuffer = "";
+      askAnswer.textContent = "";
       vscodeApi.postMessage({ command: "ask", question });
     });
 
     window.addEventListener("message", (event) => {
       const msg = event.data;
-      if (msg.command === "askResult") {
-        askAnswer.textContent = msg.answer;
+      if (msg.command === "askChunk") {
+        askBuffer += msg.chunk;
+        void renderAskAnswer(askBuffer);
+      } else if (msg.command === "askDone") {
         askButton.disabled = false;
       } else if (msg.command === "askError") {
         askAnswer.textContent = "Error: " + msg.message;
@@ -482,40 +597,6 @@ function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, m
   </script>
 </body>
 </html>`;
-}
-
-async function runAsk() {
-  const repoPath = await currentWorkspacePath();
-  if (!repoPath) return;
-
-  if (!hasProviderConfigured(extContext)) {
-    const choice = await vscode.window.showInformationMessage(
-      "RepoLens: 'Ask' needs an LLM provider configured (BYOK — bring your own key). This is only needed once.",
-      "Configure now"
-    );
-    if (choice !== "Configure now") return;
-    await configureProvider(extContext);
-    if (!hasProviderConfigured(extContext)) return; // user cancelled the picker
-  }
-
-  const question = await vscode.window.showInputBox({
-    prompt: "Ask a question about this codebase's architecture",
-    placeHolder: "How does user creation work?",
-  });
-  if (!question) return;
-
-  const answer = await withErrorHandling(async () =>
-    vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "RepoLens: thinking..." },
-      () => client.ask(repoPath, question)
-    )
-  );
-  if (!answer) return;
-
-  outputChannel.clear();
-  outputChannel.appendLine(`Q: ${question}\n`);
-  outputChannel.appendLine(answer);
-  outputChannel.show();
 }
 
 async function openNode(repoPath: string, node: { file: string; start_line: number }) {

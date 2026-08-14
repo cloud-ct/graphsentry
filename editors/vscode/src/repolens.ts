@@ -4,7 +4,7 @@
 // from the Go binary, keeping a single source of truth between the CLI
 // and the editor integration.
 import * as vscode from "vscode";
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { getBinaryPath } from "./binaryManager";
 import { resolveProviderEnv } from "./config";
 
@@ -83,8 +83,35 @@ export class RepoLensClient {
     return JSON.parse(out) as FlowResult;
   }
 
-  async ask(repoPath: string, question: string): Promise<string> {
-    return this.run(["ask", question, "--repo", repoPath]);
+  /** Streams `repolens ask --stream`, invoking onDelta with each raw text
+   * chunk as the model generates it, so the caller can render live instead
+   * of waiting for the full answer. `root`, when given, scopes the
+   * question to that symbol's subgraph directly (see the CLI's `--root`)
+   * rather than letting the CLI's own repo-wide keyword search pick a
+   * (possibly unrelated) one — this is what lets a question asked from
+   * the flow panel stay about the flow that's actually on screen. */
+  async askStream(repoPath: string, question: string, root: string | undefined, onDelta: (chunk: string) => void): Promise<void> {
+    const bin = await getBinaryPath(this.context);
+    const providerEnv = await resolveProviderEnv(this.context);
+    const args = ["ask", question, "--repo", repoPath, "--stream"];
+    if (root) args.push("--root", root);
+
+    return new Promise((resolve, reject) => {
+      const child = spawn(bin, args, { env: { ...process.env, ...providerEnv } });
+      let stderr = "";
+      child.stdout.on("data", (buf: Buffer) => onDelta(buf.toString("utf8")));
+      child.stderr.on("data", (buf: Buffer) => {
+        stderr += buf.toString("utf8");
+      });
+      child.on("error", (err) => reject(new RepoLensError(err.message)));
+      child.on("close", (code) => {
+        if (code !== 0) {
+          reject(new RepoLensError(stderr.trim() || `repolens ask exited with code ${code}`));
+          return;
+        }
+        resolve();
+      });
+    });
   }
 
   private async run(args: string[]): Promise<string> {
