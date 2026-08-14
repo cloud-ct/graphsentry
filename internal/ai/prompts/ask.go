@@ -21,7 +21,13 @@ Respond in exactly three sections, in this order:
 3. ASCII: the same flow as a simple ASCII tree (arrows like "└─►").
 
 Be precise and grounded only in the given subgraph — do not invent symbols,
-files, or dependencies that are not present in it.`
+files, or dependencies that are not present in it.
+
+Write the EXPLANATION in whatever language the QUESTION was asked in (e.g.
+a question in Portuguese gets a Portuguese explanation) — symbol and file
+names stay as-is regardless of language, since those are literal
+identifiers from the code, not prose to translate. MERMAID and ASCII are
+diagram syntax, not prose, so they're unaffected by this.`
 
 // BuildUserPrompt assembles the per-request prompt from the question and
 // the serialized subgraph context.

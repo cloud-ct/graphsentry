@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,7 +11,7 @@ import (
 )
 
 func newAskCmd() *cobra.Command {
-	var repoFlag string
+	var repoFlag, rootFlag string
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
 		Short: "Ask a natural-language question about the repository's architecture (requires an LLM key — BYOK)",
@@ -39,23 +38,38 @@ func newAskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runAsk(cmd, provider, g, args[0])
+			return runAsk(cmd, provider, g, args[0], rootFlag)
 		},
 	}
 	cmd.Flags().StringVar(&repoFlag, "repo", "", "repository to query (default: last analyzed)")
+	cmd.Flags().StringVar(&rootFlag, "root", "", "scope the question to the subgraph around this symbol ID, instead of searching the whole repo by keyword (used by the VS Code extension's flow-panel Ask box)")
 	return cmd
 }
 
-// runAsk implements the ask pipeline: find symbols relevant to the
-// question by lexical match against node names (a lightweight stand-in for
-// embedding search until the index package's cache is populated), expand a
-// bounded subgraph around them, and hand only that subgraph — never the
-// whole repo — to the LLM for narration + diagramming.
-func runAsk(cmd *cobra.Command, provider ai.Provider, g *graph.Graph, question string) error {
-	seeds := lexicalMatch(g, question, 5)
-	if len(seeds) == 0 {
-		fmt.Println("Couldn't find any symbols related to that question in the graph. Try mentioning a specific function, class, or endpoint name.")
-		return nil
+// runAsk implements the ask pipeline: find the symbols relevant to the
+// question, expand a bounded subgraph around them, and hand only that
+// subgraph — never the whole repo — to the LLM for narration + diagramming.
+//
+// Relevant symbols come from one of two sources: if root is set, it's used
+// directly as the sole seed (exact node-ID match, no searching) — this is
+// what lets a question asked from an already-open flow/impact view stay
+// scoped to what's on screen instead of the CLI re-discovering a
+// (possibly unrelated) subgraph from scratch. Otherwise, falls back to
+// lexical match against node names — a lightweight stand-in for embedding
+// search until the index package's cache is populated.
+func runAsk(cmd *cobra.Command, provider ai.Provider, g *graph.Graph, question, root string) error {
+	var seeds []string
+	if root != "" {
+		if _, ok := g.Nodes[root]; !ok {
+			return fmt.Errorf("--root %q is not a known symbol in this graph (has it been renamed or removed since the flow view was opened? try re-analyzing)", root)
+		}
+		seeds = []string{root}
+	} else {
+		seeds = lexicalMatch(g, question, 5)
+		if len(seeds) == 0 {
+			fmt.Println("Couldn't find any symbols related to that question in the graph. Try mentioning a specific function, class, or endpoint name.")
+			return nil
+		}
 	}
 
 	sub := expandSubgraph(g, seeds, 2)
@@ -160,5 +174,3 @@ func expandSubgraph(g *graph.Graph, seeds []string, depth int) *graph.Graph {
 	}
 	return sub
 }
-
-var _ = os.Stdout

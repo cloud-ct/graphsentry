@@ -179,3 +179,41 @@ public class AppService(IAppRepository appRepository) : IAppService {
 		t.Errorf("expected the call through the primary-constructor parameter to carry ReceiverType IAppRepository, got %q", call.ReceiverType)
 	}
 }
+
+// TestLocalFunctionCallsAreExcluded is a regression test for a false
+// dependent edge found against bankme-ai-main: a class declared a local
+// function named Send (nested inside another method), and bare calls to
+// it resolved — via the bare-name heuristic, since local functions aren't
+// tracked as symbols at all — to a completely unrelated class elsewhere in
+// the repo that happened to be the only OTHER symbol named "Send",
+// wrongly inflating that unrelated method's dependent count.
+func TestLocalFunctionCallsAreExcluded(t *testing.T) {
+	const src = `class Worker {
+    public async Task Run() {
+        Task Send(object payload) {
+            return null;
+        }
+        await Send(new { });
+    }
+}
+`
+	a := New()
+	fa, err := a.Analyze("worker.cs", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+	var run *parser.Symbol
+	for i := range fa.Symbols {
+		if fa.Symbols[i].Name == "Run" {
+			run = &fa.Symbols[i]
+		}
+	}
+	if run == nil {
+		t.Fatal("expected to find Run method")
+	}
+	for _, c := range run.Calls {
+		if c.Name == "Send" {
+			t.Errorf("expected no CallRef for the local function Send, got %+v", c)
+		}
+	}
+}

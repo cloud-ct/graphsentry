@@ -22,7 +22,12 @@ type ImpactedNode struct {
 // Impact performs a breadth-first traversal of incoming edges (calls,
 // references, implements, imports) starting from id, up to maxDepth hops
 // (0 = unlimited). It answers: "if I change this symbol, what depends on
-// it and could break?"
+// it and could break?" "Defines" edges (a file defining the symbols in it)
+// are deliberately excluded from this traversal: every symbol has exactly
+// one, from its own file, so including it would report "the file this
+// lives in" as an impacted dependent of literally every query — true but
+// meaningless noise, since changing a method doesn't "break" the file that
+// contains it the way changing it can break an actual caller.
 func (g *Graph) Impact(id string, maxDepth int) *ImpactResult {
 	visited := map[string]int{id: 0}
 	via := map[string]EdgeKind{}
@@ -36,7 +41,7 @@ func (g *Graph) Impact(id string, maxDepth int) *ImpactResult {
 		if maxDepth > 0 && d >= maxDepth {
 			continue
 		}
-		for _, e := range g.In(cur) {
+		for _, e := range excludeDefines(g.In(cur)) {
 			if _, seen := visited[e.From]; seen {
 				continue
 			}
@@ -76,14 +81,34 @@ type CouplingScore struct {
 	Total  int   `json:"total"`
 }
 
-// FanIn returns the number of distinct nodes with an edge pointing to id.
+// FanIn returns the number of distinct nodes with a real dependency edge
+// pointing to id (calls, instantiates, implements, imports — not
+// "defines": see excludeDefines).
 func (g *Graph) FanIn(id string) int {
-	return len(distinctEndpoints(g.In(id), true))
+	return len(distinctEndpoints(excludeDefines(g.In(id)), true))
 }
 
-// FanOut returns the number of distinct nodes id has an edge pointing to.
+// FanOut returns the number of distinct nodes id has a real dependency
+// edge pointing to (see FanIn).
 func (g *Graph) FanOut(id string) int {
-	return len(distinctEndpoints(g.Out(id), false))
+	return len(distinctEndpoints(excludeDefines(g.Out(id)), false))
+}
+
+// excludeDefines drops "defines" edges (a file defining the symbols
+// declared in it) from a result set. Every symbol has exactly one —
+// from its own file — so counting it as coupling or impact would inflate
+// every single node's numbers by the same meaningless +1: "the file I'm
+// declared in" isn't a dependent or a dependency in any sense a user
+// asking "what's coupled to this" or "what breaks if I change this" cares
+// about.
+func excludeDefines(edges []*Edge) []*Edge {
+	var out []*Edge
+	for _, e := range edges {
+		if e.Kind != EdgeDefines {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func distinctEndpoints(edges []*Edge, incoming bool) map[string]bool {

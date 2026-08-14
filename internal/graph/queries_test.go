@@ -95,3 +95,28 @@ func TestEndpointsAccessingDB(t *testing.T) {
 		t.Errorf("expected POST /users endpoint to reach DB, got %+v", endpoints)
 	}
 }
+
+// TestDefinesEdgeExcludedFromCouplingAndImpact is a regression test for a
+// confusion reported against bankme-ai-main: every symbol's fan-in/impact
+// count was inflated by exactly 1, because the "file defines this symbol"
+// bookkeeping edge every symbol has was being counted as a real
+// dependent/dependency. A user asking "why does this method have N
+// dependents" should never have to first subtract 1 for "its own file".
+func TestDefinesEdgeExcludedFromCouplingAndImpact(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "file::a.go", Kind: NodeFile, Name: "a.go"})
+	g.AddNode(&Node{ID: "symbol::a.go::Foo", Kind: NodeFunction, Name: "Foo"})
+	g.AddEdge("file::a.go", "symbol::a.go::Foo", EdgeDefines)
+
+	if fi := g.FanIn("symbol::a.go::Foo"); fi != 0 {
+		t.Errorf("expected FanIn 0 for a symbol with only a defines edge, got %d", fi)
+	}
+	if fo := g.FanOut("file::a.go"); fo != 0 {
+		t.Errorf("expected FanOut 0 for a file with only a defines edge, got %d", fo)
+	}
+
+	res := g.Impact("symbol::a.go::Foo", 0)
+	if len(res.Impacted) != 0 {
+		t.Errorf("expected no impacted nodes from a defines-only edge, got %+v", res.Impacted)
+	}
+}

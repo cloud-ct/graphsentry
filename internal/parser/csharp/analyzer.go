@@ -223,6 +223,43 @@ func collectLocalTypes(body *sitter.Node, src []byte, hints map[string]string) {
 	walk(body)
 }
 
+// collectLocalFunctionNames returns the names of every C# local function
+// declared anywhere in a method body (`Task Send(...) { ... }` nested
+// inside another method — a distinct language feature from a lambda or a
+// class-level method). These are intentionally *not* tracked as graph
+// symbols at all — they're private control flow with no meaning outside
+// the method that declares them — so a bare call to one must never be
+// handed to the bare-name heuristic: if some other, unrelated class
+// elsewhere in the repo happens to have a same-named method and is the
+// *only* other candidate, the heuristic's "just one candidate" shortcut
+// would confidently resolve the call to that unrelated symbol. Regression
+// case: QprofToolCallService declares a local `Send` function; without
+// this exclusion, calls to it resolved to the globally-unique
+// DialogMessageController.Send, wrongly inflating that controller
+// action's dependent count.
+func collectLocalFunctionNames(body *sitter.Node, src []byte) map[string]bool {
+	names := map[string]bool{}
+	if body == nil {
+		return names
+	}
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type() == "local_function_statement" {
+			if nameNode := n.ChildByFieldName("name"); nameNode != nil {
+				names[nameNode.Content(src)] = true
+			}
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(body)
+	return names
+}
+
 // walkClassMember handles method_declaration nodes inside a class body,
 // qualifying them as Class.Method and detecting HTTP endpoint attributes.
 func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes map[string]string, fa *parser.FileAnalysis, src []byte,
@@ -247,10 +284,12 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes ma
 		if params := n.ChildByFieldName("parameters"); params != nil {
 			collectParameterTypes(params, src, hints)
 		}
+		var localFuncs map[string]bool
 		if body := n.ChildByFieldName("body"); body != nil {
 			collectLocalTypes(body, src, hints)
+			localFuncs = collectLocalFunctionNames(body, src)
 		}
-		calls, creates := extractCallsAndCreates(n, src, hints, className)
+		calls, creates := extractCallsAndCreates(n, src, hints, className, localFuncs)
 
 		fa.Symbols = append(fa.Symbols, parser.Symbol{
 			Kind: parser.KindMethod, Name: mName, Qualified: className + "." + mName,
@@ -465,7 +504,7 @@ func normalizeTypeName(raw string) string {
 // extractCallsAndCreates walks a method body collecting both call targets
 // (with a receiver type hint when typeHints/this-resolution can supply
 // one) and the type names it instantiates via `new`.
-func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]string, className string) ([]parser.CallRef, []parser.CreateRef) {
+func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]string, className string, localFuncs map[string]bool) ([]parser.CallRef, []parser.CreateRef) {
 	seenCall := map[string]bool{}
 	seenCreate := map[string]bool{}
 	var calls []parser.CallRef
@@ -479,6 +518,14 @@ func extractCallsAndCreates(n *sitter.Node, src []byte, typeHints map[string]str
 		case "invocation_expression":
 			if fn := n.ChildByFieldName("function"); fn != nil {
 				name, receiverType := callTargetWithType(fn, src, typeHints, className)
+				// A bare call to a local function (declared inside this
+				// same method body) isn't a real cross-symbol dependency —
+				// see collectLocalFunctionNames for why resolving it via
+				// the bare-name heuristic is actively dangerous, not just
+				// noisy.
+				if receiverType == "" && localFuncs[name] {
+					name = ""
+				}
 				key := receiverType + "\x00" + name
 				if name != "" && !seenCall[key] {
 					seenCall[key] = true
