@@ -77,3 +77,77 @@ func TestLocalVarCallHasReceiverType(t *testing.T) {
 		t.Errorf("expected ReceiverType ChatController, got %q", call.ReceiverType)
 	}
 }
+
+// TestDeepAttributeChainCallIsDropped is a regression test for the exact
+// real-world bug reported: `self.client = OpenAI()` followed by a call
+// several attributes deep — `self.client.beta.threads.create()` — showed
+// up as a call to an unrelated ChatController.create, because the
+// analyzer's first pass at receiver-type tracking only handled a single
+// level of attribute access (self.attr.method() or local.method()) and
+// silently fell through to the unsafe bare-name heuristic for anything
+// deeper. A chain more than one attribute past a tracked receiver has an
+// intermediate type (here, whatever `self.client.beta` evaluates to) the
+// analyzer has no way to know — the fix is to drop such calls entirely
+// rather than guess, which this asserts directly: no CallRef for
+// "create" should be produced at all.
+func TestDeepAttributeChainCallIsDropped(t *testing.T) {
+	const src = `class ChatService:
+    def __init__(self):
+        self.client = OpenAI()
+
+    def chat_message(self):
+        thread = self.client.beta.threads.create()
+        return thread
+`
+	a := New()
+	fa, err := a.Analyze("chat_service.py", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+	var method *parser.Symbol
+	for i := range fa.Symbols {
+		if fa.Symbols[i].Qualified == "ChatService.chat_message" {
+			method = &fa.Symbols[i]
+		}
+	}
+	if method == nil {
+		t.Fatal("expected to find ChatService.chat_message")
+	}
+	for _, c := range method.Calls {
+		if c.Name == "create" {
+			t.Errorf("expected no CallRef for the deep-chain create() call, got %+v", c)
+		}
+	}
+}
+
+// TestSelfMethodCallHasClassReceiverType verifies that self.method() —
+// calling another method of the same class — carries the class's own
+// name as ReceiverType (mirroring the C# analyzer's this_expression
+// handling), so it resolves precisely instead of via the bare-name
+// heuristic.
+func TestSelfMethodCallHasClassReceiverType(t *testing.T) {
+	const src = `class Worker:
+    def run(self):
+        self.helper()
+
+    def helper(self):
+        pass
+`
+	a := New()
+	fa, err := a.Analyze("worker.py", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+	var run *parser.Symbol
+	for i := range fa.Symbols {
+		if fa.Symbols[i].Qualified == "Worker.run" {
+			run = &fa.Symbols[i]
+		}
+	}
+	if run == nil {
+		t.Fatal("expected to find Worker.run")
+	}
+	if len(run.Calls) != 1 || run.Calls[0].Name != "helper" || run.Calls[0].ReceiverType != "Worker" {
+		t.Errorf("expected a single helper() call with ReceiverType Worker, got %+v", run.Calls)
+	}
+}

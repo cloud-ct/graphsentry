@@ -180,7 +180,7 @@ func collectFunction(n *sitter.Node, className string, selfAttrs map[string]stri
 		Kind: kind, Name: fName, Qualified: qualified,
 		StartLine: start, EndLine: end,
 		Signature: signatureLine(text(funcNode)),
-		Calls:     extractCalls(funcNode, src, selfAttrs, localHints),
+		Calls:     extractCalls(funcNode, src, className, selfAttrs, localHints),
 	})
 
 	if verb, route := endpointFromDecorators(decorators, src); verb != "" {
@@ -323,14 +323,16 @@ func signatureLine(full string) string {
 }
 
 // extractCalls walks a function body collecting call targets: plain
-// identifier calls (foo()) and member calls (obj.method()), the latter
-// tagged with a ReceiverType when selfAttrs/localHints can resolve one
-// (see collectSelfAttrTypes/collectLocalVarTypes) — the graph builder then
-// resolves a hinted call within that specific class instead of guessing
-// from every same-named method in the repo. Over-reporting an unhinted
-// bare call is fine; the builder's bare-name heuristic drops it rather
-// than resolving it if it's ambiguous.
-func extractCalls(n *sitter.Node, src []byte, selfAttrs, localHints map[string]string) []parser.CallRef {
+// identifier calls (foo(), resolved later by the builder's same-file-
+// preferring bare-name heuristic — safe, since a receiver-less call is
+// most often to something in the same file) and member calls
+// (obj.method()), which are only kept when callTargetWithType can
+// confidently attach a ReceiverType. An attribute call whose receiver
+// type can't be determined is dropped entirely rather than falling back
+// to the bare-name heuristic — see callTargetWithType for why a
+// permissive fallback there is actively dangerous in Python, where
+// there's no static typing to lean on at all.
+func extractCalls(n *sitter.Node, src []byte, className string, selfAttrs, localHints map[string]string) []parser.CallRef {
 	seen := map[string]bool{}
 	var calls []parser.CallRef
 	var walk func(n *sitter.Node)
@@ -341,11 +343,13 @@ func extractCalls(n *sitter.Node, src []byte, selfAttrs, localHints map[string]s
 		if n.Type() == "call" {
 			fn := n.ChildByFieldName("function")
 			if fn != nil {
-				name, receiverType := callTargetWithType(fn, src, selfAttrs, localHints)
-				key := receiverType + "\x00" + name
-				if name != "" && !seen[key] {
-					seen[key] = true
-					calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType, Line: int(n.StartPoint().Row) + 1})
+				name, receiverType, ok := callTargetWithType(fn, src, className, selfAttrs, localHints)
+				if ok {
+					key := receiverType + "\x00" + name
+					if name != "" && !seen[key] {
+						seen[key] = true
+						calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType, Line: int(n.StartPoint().Row) + 1})
+					}
 				}
 			}
 		}
@@ -357,48 +361,75 @@ func extractCalls(n *sitter.Node, src []byte, selfAttrs, localHints map[string]s
 	return calls
 }
 
-// callTargetWithType extracts a call's method/function name and, when
-// possible, the type of its receiver: `self.attr.method()` resolves via
-// selfAttrs (the class's tracked self.attr = ClassName(...) assignments);
-// `local.method()` resolves via localHints (this function's tracked
-// `x = ClassName(...)` assignments). Anything else — chained/dynamic
-// attribute access, a receiver whose type couldn't be inferred (e.g.
-// passed in via dependency injection rather than constructed locally) —
-// yields no hint, and the call falls back to the bare-name heuristic.
-func callTargetWithType(fn *sitter.Node, src []byte, selfAttrs, localHints map[string]string) (name, receiverType string) {
+// callTargetWithType extracts a call's method/function name and, when the
+// receiver is one we can actually reason about, its type — returning
+// ok=false when it isn't, which tells extractCalls to drop the call
+// entirely instead of resolving it. This matters because Python has no
+// static typing to fall back on: a bare-name resolution "exactly one
+// candidate in the repo" shortcut has no type system stopping it from
+// matching a call through a completely unrelated, unresolvable receiver.
+// Concretely:
+//   - `foo()` (no receiver at all): ok=true, ReceiverType="" — the
+//     builder's same-file-preferring bare-name heuristic is reasonably
+//     safe here, since there's no receiver to be wrong about.
+//   - `self.method()`: ok=true, ReceiverType=className — calling another
+//     method of the same class, which we always know precisely.
+//   - `self.attr.method()` where self.attr was seen as
+//     `self.attr = ClassName(...)`: ok=true, ReceiverType=ClassName.
+//   - `local.method()` where local was seen as `local = ClassName(...)`:
+//     ok=true, ReceiverType=ClassName.
+//   - anything else — `self.attr.method()` with an untracked attr (e.g.
+//     set via constructor-injected `self.attr = attr`), a receiver that's
+//     itself a call's result, or any chain two or more attributes deep
+//     (`client.beta.threads.create()` — the type of the intermediate
+//     `client.beta.threads` isn't something we can know without a real
+//     type checker, even though `client` itself might be tracked): ok=false.
+//     Regression case: ChatService.chat_message called
+//     client.beta.threads.create() (an OpenAI SDK object, external to the
+//     repo) and it wrongly resolved to the repo's own, unrelated
+//     ChatController.create — the only other symbol named "create" —
+//     because this used to fall through to the bare-name heuristic with
+//     no receiver type at all.
+func callTargetWithType(fn *sitter.Node, src []byte, className string, selfAttrs, localHints map[string]string) (name, receiverType string, ok bool) {
 	switch fn.Type() {
 	case "identifier":
-		return fn.Content(src), ""
+		return fn.Content(src), "", true
 	case "attribute":
 		attrNode := fn.ChildByFieldName("attribute")
-		if attrNode == nil {
-			return "", ""
+		obj := fn.ChildByFieldName("object")
+		if attrNode == nil || obj == nil {
+			return "", "", false
 		}
 		name = attrNode.Content(src)
-		if obj := fn.ChildByFieldName("object"); obj != nil {
-			receiverType = receiverTypeOf(obj, src, selfAttrs, localHints)
-		}
-		return name, receiverType
-	}
-	return "", ""
-}
 
-// receiverTypeOf resolves the tracked type of a call's receiver
-// expression: `self.attr` (obj is itself an `attribute` node) via
-// selfAttrs, or a plain local variable identifier via localHints.
-func receiverTypeOf(obj *sitter.Node, src []byte, selfAttrs, localHints map[string]string) string {
-	switch obj.Type() {
-	case "identifier":
-		return localHints[obj.Content(src)]
-	case "attribute":
-		inner := obj.ChildByFieldName("object")
-		attr := obj.ChildByFieldName("attribute")
-		if inner == nil || attr == nil || inner.Type() != "identifier" || inner.Content(src) != "self" {
-			return ""
+		if obj.Type() == "identifier" {
+			objName := obj.Content(src)
+			if objName == "self" {
+				return name, className, true
+			}
+			if t, found := localHints[objName]; found {
+				return name, t, true
+			}
+			return "", "", false // untyped receiver (e.g. a constructor-injected attribute) — refuse rather than guess
 		}
-		return selfAttrs[attr.Content(src)]
+
+		// `self.attr.method()` — exactly one level of attribute chaining
+		// under self — is the one deeper shape we can still resolve
+		// confidently, via the tracked type of that specific attribute.
+		// Anything deeper (obj itself being a multi-level chain) is out
+		// of reach without real type inference.
+		if obj.Type() == "attribute" {
+			innerObj := obj.ChildByFieldName("object")
+			innerAttr := obj.ChildByFieldName("attribute")
+			if innerObj != nil && innerAttr != nil && innerObj.Type() == "identifier" && innerObj.Content(src) == "self" {
+				if t, found := selfAttrs[innerAttr.Content(src)]; found {
+					return name, t, true
+				}
+			}
+		}
+		return "", "", false
 	}
-	return ""
+	return "", "", false
 }
 
 // collectSelfAttrTypes scans an entire class body (every method, not just

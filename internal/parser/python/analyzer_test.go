@@ -16,7 +16,13 @@ class UsersController:
 
     @bp.route('/users', methods=["POST"])
     def create():
+        # user_service is a module-level global with no locally-inferable
+        # type — the analyzer deliberately does NOT resolve this call
+        # (see TestUntypedReceiverCallIsDropped), rather than risk it
+        # matching an unrelated same-named method elsewhere in the repo.
         user = user_service.create_user()
+        service = UserService()
+        service.notify()
         return user
 
 def helper(x):
@@ -64,13 +70,24 @@ func TestAnalyze(t *testing.T) {
 	if endpoint.Name != "POST /users" {
 		t.Errorf("expected endpoint 'POST /users', got %s", endpoint.Name)
 	}
-	found := false
+	// create_user() is dropped: user_service is a module-level global with
+	// no locally-inferable type, and the analyzer no longer guesses at
+	// receivers it can't type (see callTargetWithType / the regression
+	// tests in typeaware_test.go).
 	for _, c := range method.Calls {
 		if c.Name == "create_user" {
+			t.Errorf("expected no CallRef for create_user (untyped module-global receiver), got %+v", c)
+		}
+	}
+	// notify() on a locally-constructed UserService() IS resolvable and
+	// must still come through, with its receiver type attached.
+	found := false
+	for _, c := range method.Calls {
+		if c.Name == "notify" && c.ReceiverType == "UserService" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected create() to call create_user, got calls: %v", method.Calls)
+		t.Errorf("expected create() to call notify() with ReceiverType UserService, got calls: %v", method.Calls)
 	}
 }
