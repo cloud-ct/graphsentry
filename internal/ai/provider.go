@@ -36,6 +36,12 @@ type Provider interface {
 	// Ask sends the bounded question+context to the model and returns a
 	// structured explanation + diagrams.
 	Ask(ctx context.Context, req AskRequest) (*AskResponse, error)
+	// AskStream behaves like Ask, but invokes onDelta with each chunk of
+	// raw text as the model generates it (so a caller — `repolens ask
+	// --stream` — can forward it live instead of waiting for the full
+	// response), and still returns the same final parsed AskResponse once
+	// generation completes.
+	AskStream(ctx context.Context, req AskRequest, onDelta func(string)) (*AskResponse, error)
 }
 
 // Config holds BYOK settings resolved from environment variables or

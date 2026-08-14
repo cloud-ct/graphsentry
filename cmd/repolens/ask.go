@@ -12,6 +12,7 @@ import (
 
 func newAskCmd() *cobra.Command {
 	var repoFlag, rootFlag string
+	var streamFlag bool
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
 		Short: "Ask a natural-language question about the repository's architecture (requires an LLM key — BYOK)",
@@ -38,12 +39,61 @@ func newAskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if streamFlag {
+				return runAskStream(cmd, provider, g, args[0], rootFlag)
+			}
 			return runAsk(cmd, provider, g, args[0], rootFlag)
 		},
 	}
 	cmd.Flags().StringVar(&repoFlag, "repo", "", "repository to query (default: last analyzed)")
 	cmd.Flags().StringVar(&rootFlag, "root", "", "scope the question to the subgraph around this symbol ID, instead of searching the whole repo by keyword (used by the VS Code extension's flow-panel Ask box)")
+	cmd.Flags().BoolVar(&streamFlag, "stream", false, "print the answer as raw text chunks as they arrive, instead of waiting for the full response (for a consuming tool to render live — see the VS Code extension's flow-panel Ask box)")
 	return cmd
+}
+
+// resolveSeeds is the seed-selection half of runAsk/runAskStream: root
+// (exact match) when given, else lexical match against the question. A
+// nil/empty seeds slice with a nil error means "explained to the user
+// already, nothing more to do" (the no-match case); callers should return
+// immediately in that case without treating it as an error.
+func resolveSeeds(g *graph.Graph, question, root string) ([]string, error) {
+	if root != "" {
+		if _, ok := g.Nodes[root]; !ok {
+			return nil, fmt.Errorf("--root %q is not a known symbol in this graph (has it been renamed or removed since the flow view was opened? try re-analyzing)", root)
+		}
+		return []string{root}, nil
+	}
+	seeds := lexicalMatch(g, question, 5)
+	if len(seeds) == 0 {
+		fmt.Println("Couldn't find any symbols related to that question in the graph. Try mentioning a specific function, class, or endpoint name.")
+	}
+	return seeds, nil
+}
+
+// runAskStream mirrors runAsk but prints each chunk of the model's answer
+// to stdout as it arrives (unbuffered) instead of the full, post-processed
+// EXPLANATION/MERMAID/ASCII rendering — meant for a consuming tool (the VS
+// Code extension's flow-panel Ask box) that reads this process's stdout
+// incrementally and renders live, parsing the structure client-side.
+func runAskStream(cmd *cobra.Command, provider ai.Provider, g *graph.Graph, question, root string) error {
+	seeds, err := resolveSeeds(g, question, root)
+	if err != nil {
+		return err
+	}
+	if len(seeds) == 0 {
+		return nil
+	}
+
+	sub := expandSubgraph(g, seeds, 2)
+	context := ai.SerializeSubgraph(sub)
+
+	_, err = provider.AskStream(cmd.Context(), ai.AskRequest{
+		Question:     question,
+		GraphContext: context,
+	}, func(chunk string) {
+		fmt.Print(chunk)
+	})
+	return err
 }
 
 // runAsk implements the ask pipeline: find the symbols relevant to the
@@ -58,18 +108,12 @@ func newAskCmd() *cobra.Command {
 // lexical match against node names — a lightweight stand-in for embedding
 // search until the index package's cache is populated.
 func runAsk(cmd *cobra.Command, provider ai.Provider, g *graph.Graph, question, root string) error {
-	var seeds []string
-	if root != "" {
-		if _, ok := g.Nodes[root]; !ok {
-			return fmt.Errorf("--root %q is not a known symbol in this graph (has it been renamed or removed since the flow view was opened? try re-analyzing)", root)
-		}
-		seeds = []string{root}
-	} else {
-		seeds = lexicalMatch(g, question, 5)
-		if len(seeds) == 0 {
-			fmt.Println("Couldn't find any symbols related to that question in the graph. Try mentioning a specific function, class, or endpoint name.")
-			return nil
-		}
+	seeds, err := resolveSeeds(g, question, root)
+	if err != nil {
+		return err
+	}
+	if len(seeds) == 0 {
+		return nil
 	}
 
 	sub := expandSubgraph(g, seeds, 2)
