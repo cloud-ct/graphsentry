@@ -1,4 +1,4 @@
-// Command repolens is the CLI entry point for RepoLens: analyze a git
+// Command graphsentry is the CLI entry point for GraphSentry: analyze a git
 // repository into a local code graph, then explore it deterministically
 // (impact, coupling, flow) or, with a BYOK LLM key configured, in natural
 // language via `ask`.

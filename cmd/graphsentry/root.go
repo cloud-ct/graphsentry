@@ -12,12 +12,13 @@ import (
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "repolens",
-		Short: "RepoLens — intelligent, local-first code graph exploration",
-		Long: "RepoLens parses a local folder into a multi-language code graph and lets you\n" +
-			"ask structural questions about its architecture — deterministically via the\n" +
-			"graph, or in natural language via your own LLM key (BYOK). Built primarily to\n" +
-			"power the RepoLens VS Code extension, but fully usable standalone.",
+		Use:   "graphsentry",
+		Short: "GraphSentry — intelligent, local-first code graph exploration",
+		Long: "GraphSentry parses a local folder into a multi-language code graph and lets\n" +
+			"you ask structural questions about its architecture — deterministically via\n" +
+			"the graph, or in natural language via your own LLM key (BYOK). Built\n" +
+			"primarily to power the GraphSentry VS Code extension, but fully usable\n" +
+			"standalone.",
 	}
 	root.AddCommand(newAnalyzeCmd())
 	root.AddCommand(newImpactCmd())
@@ -27,13 +28,13 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
-// workspaceRoot returns ~/.repolens, creating it if needed.
+// workspaceRoot returns ~/.graphsentry, creating it if needed.
 func workspaceRoot() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".repolens")
+	dir := filepath.Join(home, ".graphsentry")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -87,7 +88,7 @@ func getLastTarget() (string, error) {
 	}
 	b, err := os.ReadFile(f)
 	if err != nil {
-		return "", fmt.Errorf("no repository specified and no previous `repolens analyze` found — pass --repo <url|path> or run `repolens analyze <url|path>` first")
+		return "", fmt.Errorf("no repository specified and no previous `graphsentry analyze` found — pass --repo <url|path> or run `graphsentry analyze <path>` first")
 	}
 	return string(b), nil
 }
@@ -109,7 +110,7 @@ func requireDB(target string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(dbPath); err != nil {
-		return "", fmt.Errorf("no graph found for %q — run `repolens analyze %s` first", target, target)
+		return "", fmt.Errorf("no graph found for %q — run `graphsentry analyze %s` first", target, target)
 	}
 	return dbPath, nil
 }

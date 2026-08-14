@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cloud-ct/repolens/internal/ai"
-	"github.com/cloud-ct/repolens/internal/graph"
+	"github.com/cloud-ct/graphsentry/internal/ai"
+	"github.com/cloud-ct/graphsentry/internal/graph"
 )
 
 func newAskCmd() *cobra.Command {

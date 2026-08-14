@@ -71,8 +71,8 @@ export async function clearProvider(context: vscode.ExtensionContext): Promise<v
   vscode.window.showInformationMessage("GraphSentry: LLM provider configuration cleared.");
 }
 
-/** Resolves the environment variables to pass to the repolens CLI
- * subprocess for the current provider configuration — REPOLENS_PROVIDER
+/** Resolves the environment variables to pass to the graphsentry CLI
+ * subprocess for the current provider configuration — GRAPHSENTRY_PROVIDER
  * plus whichever key/host variable that provider needs. Returns an empty
  * object if nothing is configured (deterministic commands don't need
  * this; "ask" will surface the CLI's own "no provider configured"
@@ -81,7 +81,7 @@ export async function resolveProviderEnv(context: vscode.ExtensionContext): Prom
   const provider = context.globalState.get<string>(PROVIDER_KEY);
   if (!provider) return {};
 
-  const env: NodeJS.ProcessEnv = { REPOLENS_PROVIDER: provider };
+  const env: NodeJS.ProcessEnv = { GRAPHSENTRY_PROVIDER: provider };
   switch (provider) {
     case "anthropic": {
       const key = await context.secrets.get(ANTHROPIC_SECRET);

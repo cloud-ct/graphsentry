@@ -1,14 +1,14 @@
-# Contributing to RepoLens
+# Contributing to GraphSentry
 
-Thanks for considering a contribution! RepoLens is designed so most
+Thanks for considering a contribution! GraphSentry is designed so most
 contributions don't require touching the core — the most common one is
 adding support for a new language.
 
 ## Development setup
 
 ```bash
-git clone https://github.com/<org>/repolens.git
-cd repolens
+git clone https://github.com/cloud-ct/graphsentry.git
+cd graphsentry
 go build ./...
 go test ./...
 ```
@@ -46,7 +46,7 @@ need to touch `internal/graph` or the CLI.
      over-reporting is fine (unresolved calls are silently dropped) but
      under-reporting loses real edges.
 
-4. Register your analyzer in `cmd/repolens/analyze.go`'s
+4. Register your analyzer in `cmd/graphsentry/analyze.go`'s
    `parser.NewRegistry(...)` call and add its extensions to the discovery
    `extSet`.
 5. Add fixtures under `internal/parser/<language>/testdata/` (or inline

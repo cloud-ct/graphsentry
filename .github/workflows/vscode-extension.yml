@@ -27,5 +27,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: repolens-vscode-extension
+          name: graphsentry-vscode-extension
           path: editors/vscode/*.vsix

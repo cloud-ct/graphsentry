@@ -1,4 +1,4 @@
-module github.com/cloud-ct/repolens
+module github.com/cloud-ct/graphsentry
 
 go 1.25.0
 

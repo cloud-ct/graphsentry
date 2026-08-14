@@ -6,13 +6,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cloud-ct/repolens/internal/graph"
-	"github.com/cloud-ct/repolens/internal/ingest"
-	"github.com/cloud-ct/repolens/internal/parser"
-	"github.com/cloud-ct/repolens/internal/parser/csharp"
-	"github.com/cloud-ct/repolens/internal/parser/golang"
-	"github.com/cloud-ct/repolens/internal/parser/python"
-	"github.com/cloud-ct/repolens/internal/parser/typescript"
+	"github.com/cloud-ct/graphsentry/internal/graph"
+	"github.com/cloud-ct/graphsentry/internal/ingest"
+	"github.com/cloud-ct/graphsentry/internal/parser"
+	"github.com/cloud-ct/graphsentry/internal/parser/csharp"
+	"github.com/cloud-ct/graphsentry/internal/parser/golang"
+	"github.com/cloud-ct/graphsentry/internal/parser/python"
+	"github.com/cloud-ct/graphsentry/internal/parser/typescript"
 )
 
 func newAnalyzeCmd() *cobra.Command {
@@ -91,7 +91,7 @@ func runAnalyze(target string) error {
 		return err
 	}
 
-	fmt.Printf("✓ Analysis complete. Try:\n  repolens coupling\n  repolens impact <symbol>\n  repolens flow <endpoint|function>\n")
+	fmt.Printf("✓ Analysis complete. Try:\n  graphsentry coupling\n  graphsentry impact <symbol>\n  graphsentry flow <endpoint|function>\n")
 	return nil
 }
 

@@ -9,7 +9,7 @@ import (
 
 // Store persists a Graph to a local SQLite database (pure Go driver, no
 // CGO). Each analyzed repository gets its own database file under
-// ~/.repolens/<repo-hash>/graph.db.
+// ~/.graphsentry/<repo-hash>/graph.db.
 type Store struct {
 	db *sql.DB
 }
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS meta (
 // created before it existed. CREATE TABLE IF NOT EXISTS above is a no-op
 // against an existing (pre-migration) database file, so without this a
 // repo analyzed before this column was introduced would hit a column-count
-// mismatch on the next `repolens analyze` instead of just picking up the
+// mismatch on the next `graphsentry analyze` instead of just picking up the
 // new column.
 func (s *Store) migrateAddQualifiedColumn() error {
 	rows, err := s.db.Query(`PRAGMA table_info(nodes)`)
@@ -116,7 +116,7 @@ func (s *Store) migrateAddQualifiedColumn() error {
 
 // Save truncates the nodes/edges tables and writes the full graph. Analysis
 // is a full rebuild rather than an incremental diff, so this keeps the
-// store consistent with the latest `repolens analyze` run.
+// store consistent with the latest `graphsentry analyze` run.
 func (s *Store) Save(g *Graph) error {
 	tx, err := s.db.Begin()
 	if err != nil {

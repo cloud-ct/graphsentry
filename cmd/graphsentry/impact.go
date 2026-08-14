@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cloud-ct/repolens/internal/diagram"
-	"github.com/cloud-ct/repolens/internal/graph"
+	"github.com/cloud-ct/graphsentry/internal/diagram"
+	"github.com/cloud-ct/graphsentry/internal/graph"
 )
 
 func newImpactCmd() *cobra.Command {

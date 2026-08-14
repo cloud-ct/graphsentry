@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the repolens CLI for every OS/arch the VSCode extension needs to
+# Builds the graphsentry CLI for every OS/arch the VSCode extension needs to
 # auto-download, and attaches them to a GitHub Release. Triggered by
 # pushing a tag like v0.1.0.
 on:
@@ -65,13 +65,13 @@ jobs:
           fi
           ext=""
           if [ "${{ matrix.os }}" = "windows" ]; then ext=".exe"; fi
-          name="repolens-${{ matrix.os }}-${{ matrix.arch }}${ext}"
-          go build -ldflags="-s -w" -o "dist/${name}" ./cmd/repolens
+          name="graphsentry-${{ matrix.os }}-${{ matrix.arch }}${ext}"
+          go build -ldflags="-s -w" -o "dist/${name}" ./cmd/graphsentry
           echo "ASSET=dist/${name}" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: repolens-${{ matrix.os }}-${{ matrix.arch }}
+          name: graphsentry-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{ env.ASSET }}
 
   release:

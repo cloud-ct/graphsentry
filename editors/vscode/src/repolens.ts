@@ -1,4 +1,4 @@
-// Thin wrapper around the repolens CLI: runs it as a child process and
+// Thin wrapper around the graphsentry CLI: runs it as a child process and
 // parses its --json output. The extension never reimplements graph logic
 // — every deterministic answer (impact, coupling, flow) comes straight
 // from the Go binary, keeping a single source of truth between the CLI
@@ -63,7 +63,7 @@ export class RepoLensError extends Error {}
 export class RepoLensClient {
   constructor(private context: vscode.ExtensionContext) {}
 
-  /** Runs `repolens analyze <path>` for the given workspace folder. */
+  /** Runs `graphsentry analyze <path>` for the given workspace folder. */
   async analyze(repoPath: string): Promise<void> {
     await this.run(["analyze", repoPath]);
   }
@@ -83,7 +83,7 @@ export class RepoLensClient {
     return JSON.parse(out) as FlowResult;
   }
 
-  /** Streams `repolens ask --stream`, invoking onDelta with each raw text
+  /** Streams `graphsentry ask --stream`, invoking onDelta with each raw text
    * chunk as the model generates it, so the caller can render live instead
    * of waiting for the full answer. `root`, when given, scopes the
    * question to that symbol's subgraph directly (see the CLI's `--root`)
@@ -106,7 +106,7 @@ export class RepoLensClient {
       child.on("error", (err) => reject(new RepoLensError(err.message)));
       child.on("close", (code) => {
         if (code !== 0) {
-          reject(new RepoLensError(stderr.trim() || `repolens ask exited with code ${code}`));
+          reject(new RepoLensError(stderr.trim() || `graphsentry ask exited with code ${code}`));
           return;
         }
         resolve();
@@ -119,7 +119,7 @@ export class RepoLensClient {
     // Provider env vars (REPOLENS_PROVIDER + the matching key/host) come
     // from the extension's own config (SecretStorage-backed — see
     // config.ts), not from the user's shell environment, so "Ask" works
-    // the same whether or not repolens was ever configured outside VS
+    // the same whether or not graphsentry was ever configured outside VS
     // Code. Harmless to pass on every command, not just ask.
     const providerEnv = await resolveProviderEnv(this.context);
     return new Promise((resolve, reject) => {

@@ -10,7 +10,7 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 
-	"github.com/cloud-ct/repolens/internal/parser"
+	"github.com/cloud-ct/graphsentry/internal/parser"
 )
 
 // httpMethods used to recognize Express-style route handlers, e.g.

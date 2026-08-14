@@ -3,7 +3,7 @@ package csharp
 import (
 	"testing"
 
-	"github.com/cloud-ct/repolens/internal/parser"
+	"github.com/cloud-ct/graphsentry/internal/parser"
 )
 
 // TestTypeHints is a regression test for real-world confusions reported

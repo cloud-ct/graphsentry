@@ -1,6 +1,6 @@
 # RepoLens
 
-[![CI](https://github.com/cloud-ct/repolens/actions/workflows/ci.yml/badge.svg)](https://github.com/cloud-ct/repolens/actions/workflows/ci.yml)
+[![CI](https://github.com/cloud-ct/graphsentry/actions/workflows/ci.yml/badge.svg)](https://github.com/cloud-ct/graphsentry/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Reference](https://img.shields.io/badge/go-1.25%2B-00ADD8)](https://go.dev)
 
@@ -97,41 +97,41 @@ your machine and never uploads your source code anywhere by itself.
 
 ## RepoLens as a standalone CLI
 
-The extension is powered by a Go CLI (`repolens`) that you can also use
+The extension is powered by a Go CLI (`graphsentry`) that you can also use
 directly — handy for CI, scripting, or exploring a repo from a terminal.
 
 ```bash
-go install github.com/cloud-ct/repolens/cmd/repolens@latest
+go install github.com/cloud-ct/graphsentry/cmd/graphsentry@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/cloud-ct/repolens.git
-cd repolens
-go build -o repolens ./cmd/repolens
+git clone https://github.com/cloud-ct/graphsentry.git
+cd graphsentry
+go build -o graphsentry ./cmd/graphsentry
 ```
 
 Requires Go 1.25+ (a transitive dependency of the pure-Go SQLite driver
 pins this; `go build` auto-fetches the right toolchain if yours is older,
 as long as `GOTOOLCHAIN` is not set to `local`). No Docker, no external
 database — RepoLens stores its graph in a local SQLite file under
-`~/.repolens/`.
+`~/.graphsentry/`.
 
 ```bash
-repolens analyze ./path/to/your/repo    # parse it and build the graph
-repolens coupling --top 10               # deterministic, no LLM needed
-repolens impact UserService               # what breaks if I change this?
-repolens ask "How does user creation work?" # needs an LLM key — see above
+graphsentry analyze ./path/to/your/repo    # parse it and build the graph
+graphsentry coupling --top 10               # deterministic, no LLM needed
+graphsentry impact UserService               # what breaks if I change this?
+graphsentry ask "How does user creation work?" # needs an LLM key — see above
 ```
 
 | Command | Needs an LLM? | What it does |
 |---|---|---|
-| `repolens analyze <path>` | no | Parses a local folder and builds its code graph |
-| `repolens impact <symbol>` | no | Everything that transitively depends on a symbol |
-| `repolens coupling [--top N]` | no | Most coupled symbols by fan-in + fan-out |
-| `repolens flow <endpoint\|function>` | no | ASCII (and optional Mermaid) call-flow diagram |
-| `repolens ask "<question>"` | **yes** | Natural-language Q&A with narration + diagrams |
+| `graphsentry analyze <path>` | no | Parses a local folder and builds its code graph |
+| `graphsentry impact <symbol>` | no | Everything that transitively depends on a symbol |
+| `graphsentry coupling [--top N]` | no | Most coupled symbols by fan-in + fan-out |
+| `graphsentry flow <endpoint\|function>` | no | ASCII (and optional Mermaid) call-flow diagram |
+| `graphsentry ask "<question>"` | **yes** | Natural-language Q&A with narration + diagrams |
 
 Every command supports `--repo <path>` to target a specific analyzed
 folder; if omitted, it defaults to whatever you last ran `analyze` on.
@@ -157,13 +157,13 @@ type LanguageAnalyzer interface {
 
 Implement it under `internal/parser/<language>/`, using
 `github.com/smacker/go-tree-sitter` for parsing, and register it in
-`cmd/repolens/analyze.go`.
+`cmd/graphsentry/analyze.go`.
 
 ## Architecture
 
 ```
-repolens/
-├── cmd/repolens/            # CLI entry point + cobra commands
+graphsentry/
+├── cmd/graphsentry/            # CLI entry point + cobra commands
 ├── internal/
 │   ├── ingest/               # local folder resolution, file discovery by language
 │   ├── parser/                # LanguageAnalyzer interface + tree-sitter analyzers
@@ -185,9 +185,9 @@ only ever handed the small piece of it needed to narrate an answer.
 ## Try it without a real repo
 
 ```bash
-repolens analyze ./examples/sample-app
-repolens flow CreateUser --mermaid
-repolens coupling
+graphsentry analyze ./examples/sample-app
+graphsentry flow CreateUser --mermaid
+graphsentry coupling
 ```
 
 ## License

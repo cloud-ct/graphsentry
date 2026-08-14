@@ -18,7 +18,7 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/csharp"
 
-	"github.com/cloud-ct/repolens/internal/parser"
+	"github.com/cloud-ct/graphsentry/internal/parser"
 )
 
 var httpVerbAttr = regexp.MustCompile(`^Http(Get|Post|Put|Delete|Patch)$`)

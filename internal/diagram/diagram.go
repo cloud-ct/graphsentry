@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloud-ct/repolens/internal/graph"
+	"github.com/cloud-ct/graphsentry/internal/graph"
 )
 
 // ASCIIFlow renders the flow paths from FlowPaths as an indented ASCII

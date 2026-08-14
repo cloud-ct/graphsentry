@@ -156,7 +156,7 @@ type PathStep struct {
 
 // FlowPaths performs a bounded-depth DFS over outgoing edges from id,
 // collecting all simple paths (no repeated nodes) up to maxDepth hops. Used
-// to render call-flow diagrams for `repolens flow`.
+// to render call-flow diagrams for `graphsentry flow`.
 func (g *Graph) FlowPaths(id string, maxDepth int) [][]*PathStep {
 	if maxDepth <= 0 {
 		maxDepth = 5

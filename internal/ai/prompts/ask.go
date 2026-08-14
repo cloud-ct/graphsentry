@@ -1,5 +1,5 @@
 // Package prompts holds the prompt templates used to instruct the LLM in
-// `repolens ask`: always narrate a bounded subgraph, never the whole repo,
+// `graphsentry ask`: always narrate a bounded subgraph, never the whole repo,
 // and always answer with a concise explanation plus Mermaid and ASCII
 // diagrams.
 package prompts

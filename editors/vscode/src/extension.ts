@@ -36,9 +36,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("graphsentry.analyze", () => runAnalyze()),
     vscode.commands.registerCommand("graphsentry.coupling", () => runCoupling()),
     vscode.commands.registerCommand("graphsentry.impact", (symbol?: string) => runImpact(symbol)),
-    // repolens.flow has no palette/menu/sidebar entry (see package.json)
+    // graphsentry.flow has no palette/menu/sidebar entry (see package.json)
     // — it's only ever invoked with an explicit symbol id, from a CodeLens
-    // click. repolens.ask no longer exists as a standalone command at
+    // click. graphsentry.ask no longer exists as a standalone command at
     // all: the flow panel's own Ask box (scoped to whatever flow is on
     // screen) replaced it entirely.
     vscode.commands.registerCommand("graphsentry.flow", (symbol?: string) => runFlow(symbol)),
@@ -237,7 +237,7 @@ async function runFlow(symbolArg?: string) {
 function showFlowPanel(repoPath: string, symbol: string, result: FlowResult) {
   const mediaDir = vscode.Uri.joinPath(extensionUri, "media");
   const panel = vscode.window.createWebviewPanel(
-    "repolensFlow",
+    "graphsentryFlow",
     `GraphSentry: flow of ${symbol}`,
     vscode.ViewColumn.Beside,
     { enableScripts: true, localResourceRoots: [mediaDir] }
@@ -405,7 +405,7 @@ function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, m
     const graphDefinition = ${JSON.stringify(result.mermaid)};
 
     mermaid.initialize({ startOnLoad: false, theme: "dark" });
-    mermaid.render("repolensFlowSvg", graphDefinition).then(({ svg }) => {
+    mermaid.render("graphsentryFlowSvg", graphDefinition).then(({ svg }) => {
       const container = document.getElementById("graphContainer");
       container.innerHTML = svg;
       const svgEl = container.querySelector("svg");

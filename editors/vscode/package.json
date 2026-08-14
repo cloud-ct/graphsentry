@@ -2,19 +2,19 @@
   "name": "graphsentry",
   "displayName": "GraphSentry",
   "description": "Local-first, multi-language code graph explorer. Ask architecture questions, see impact analysis and call-flow diagrams, right inside VS Code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "cloudct",
   "license": "MIT",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cloud-ct/repolens.git",
+    "url": "https://github.com/cloud-ct/graphsentry.git",
     "directory": "editors/vscode"
   },
   "bugs": {
-    "url": "https://github.com/cloud-ct/repolens/issues"
+    "url": "https://github.com/cloud-ct/graphsentry/issues"
   },
-  "homepage": "https://github.com/cloud-ct/repolens#readme",
+  "homepage": "https://github.com/cloud-ct/graphsentry#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -100,7 +100,7 @@
         "graphsentry.binaryPath": {
           "type": "string",
           "default": "",
-          "description": "Path to a repolens binary to use instead of the extension's auto-downloaded copy. Leave empty to let the extension manage it."
+          "description": "Path to a graphsentry binary to use instead of the extension's auto-downloaded copy. Leave empty to let the extension manage it."
         },
         "graphsentry.codeLens.enabled": {
           "type": "boolean",
