@@ -16,10 +16,10 @@ class UsersController:
 
     @bp.route('/users', methods=["POST"])
     def create():
-        # user_service is a module-level global with no locally-inferable
-        # type — the analyzer deliberately does NOT resolve this call
-        # (see TestUntypedReceiverCallIsDropped), rather than risk it
-        # matching an unrelated same-named method elsewhere in the repo.
+        # user_service is imported from another file, so its type isn't
+        # locally inferable — the analyzer tags it with ReceiverVar
+        # instead of ReceiverType, for the graph builder to resolve
+        # cross-file against every analyzed file's module-level vars.
         user = user_service.create_user()
         service = UserService()
         service.notify()
@@ -70,24 +70,31 @@ func TestAnalyze(t *testing.T) {
 	if endpoint.Name != "POST /users" {
 		t.Errorf("expected endpoint 'POST /users', got %s", endpoint.Name)
 	}
-	// create_user() is dropped: user_service is a module-level global with
-	// no locally-inferable type, and the analyzer no longer guesses at
-	// receivers it can't type (see callTargetWithType / the regression
-	// tests in typeaware_test.go).
+	// create_user()'s receiver (user_service, imported from elsewhere) has
+	// no locally-inferable type — it should carry ReceiverVar for the
+	// graph builder to try resolving cross-file, not a ReceiverType, and
+	// it must NOT have fallen back to the old bare-name heuristic.
+	foundCreateUser := false
 	for _, c := range method.Calls {
 		if c.Name == "create_user" {
-			t.Errorf("expected no CallRef for create_user (untyped module-global receiver), got %+v", c)
+			foundCreateUser = true
+			if c.ReceiverVar != "user_service" || c.ReceiverType != "" {
+				t.Errorf("expected create_user() to carry ReceiverVar=user_service and no ReceiverType, got %+v", c)
+			}
 		}
 	}
-	// notify() on a locally-constructed UserService() IS resolvable and
-	// must still come through, with its receiver type attached.
-	found := false
+	if !foundCreateUser {
+		t.Errorf("expected a create_user() call, got calls: %v", method.Calls)
+	}
+	// notify() on a locally-constructed UserService() resolves directly —
+	// ReceiverType, not ReceiverVar.
+	foundNotify := false
 	for _, c := range method.Calls {
 		if c.Name == "notify" && c.ReceiverType == "UserService" {
-			found = true
+			foundNotify = true
 		}
 	}
-	if !found {
+	if !foundNotify {
 		t.Errorf("expected create() to call notify() with ReceiverType UserService, got calls: %v", method.Calls)
 	}
 }

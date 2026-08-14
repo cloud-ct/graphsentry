@@ -305,3 +305,46 @@ class ChatService:
 		t.Errorf("expected chat_message to call %s, got %q", rightTargetID, gotTarget)
 	}
 }
+
+// TestBuilderResolvesModuleLevelSingleton is an end-to-end regression test
+// for the cross-file Python singleton-service pattern: chat_service.py
+// constructs `chat_service = ChatService()` at module scope, and
+// chat_controller.py (having imported that name) calls
+// `chat_service.create_assistant()`. Neither file's analyzer pass can see
+// the other side on its own — the graph builder has to reconcile
+// parser.CallRef.ReceiverVar against every file's
+// parser.FileAnalysis.ModuleVars once it's seen them all.
+func TestBuilderResolvesModuleLevelSingleton(t *testing.T) {
+	const controllerSrc = `def create():
+    request = chat_service.create_assistant()
+    return request
+`
+	const serviceSrc = `class ChatService:
+    def create_assistant(self):
+        pass
+
+chat_service = ChatService()
+`
+	a := python.New()
+	controllerFA, err := a.Analyze("chat_controller.py", []byte(controllerSrc))
+	if err != nil {
+		t.Fatalf("analyze controller failed: %v", err)
+	}
+	serviceFA, err := a.Analyze("chat_service.py", []byte(serviceSrc))
+	if err != nil {
+		t.Fatalf("analyze service failed: %v", err)
+	}
+
+	g := NewBuilder().Build([]*parser.FileAnalysis{controllerFA, serviceFA})
+
+	createID := "symbol::chat_controller.py::create"
+	wantTargetID := "symbol::chat_service.py::ChatService.create_assistant"
+
+	var gotTarget string
+	for _, e := range g.Out(createID, EdgeCalls) {
+		gotTarget = e.To
+	}
+	if gotTarget != wantTargetID {
+		t.Errorf("expected create() to call %s (via the chat_service module-level singleton), got %q", wantTargetID, gotTarget)
+	}
+}

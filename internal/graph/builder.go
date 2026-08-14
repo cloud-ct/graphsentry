@@ -29,15 +29,25 @@ type Builder struct {
 	// with common suffixes stripped) to its file node ID, for resolving
 	// import edges.
 	fileIndex map[string]string
+	// moduleVarTypes maps a module/file-scope variable name to the class
+	// name(s) it was constructed as, collected across every analyzed file
+	// (parser.FileAnalysis.ModuleVars) — this is what lets a call like
+	// `chat_service.create_assistant()` resolve even though
+	// `chat_service = ChatService()` lives in a completely different file
+	// than the call site: no single file's analyzer pass can see both
+	// sides, but the builder sees every file's module vars at once. See
+	// parser.CallRef.ReceiverVar.
+	moduleVarTypes map[string][]string
 }
 
 // NewBuilder creates an empty Builder.
 func NewBuilder() *Builder {
 	return &Builder{
-		g:         New(),
-		nameIndex: make(map[string][]string),
-		typeIndex: make(map[string][]string),
-		fileIndex: make(map[string]string),
+		g:              New(),
+		nameIndex:      make(map[string][]string),
+		typeIndex:      make(map[string][]string),
+		fileIndex:      make(map[string]string),
+		moduleVarTypes: make(map[string][]string),
 	}
 }
 
@@ -65,6 +75,9 @@ func (b *Builder) AddFile(fa *parser.FileAnalysis) {
 		if kind == NodeClass || kind == NodeInterface || kind == NodeType {
 			b.typeIndex[sym.Name] = append(b.typeIndex[sym.Name], id)
 		}
+	}
+	for _, mv := range fa.ModuleVars {
+		b.moduleVarTypes[mv.Name] = append(b.moduleVarTypes[mv.Name], mv.TypeName)
 	}
 }
 
@@ -212,11 +225,26 @@ func (b *Builder) resolveSingle(candidates []string, fromID string) (string, boo
 // evidence than an unscoped name collision. If ReceiverType is set but
 // isn't a symbol in the repo at all (a BCL/vendor type, e.g. a local `var
 // ws = new ClientWebSocket()`), resolution refuses outright rather than
-// risk matching an unrelated same-named method elsewhere in the repo. Only
-// when the analyzer supplied no ReceiverType (couldn't determine one) does
-// this fall back to the old bare-name heuristic.
+// risk matching an unrelated same-named method elsewhere in the repo.
+//
+// When there's no ReceiverType but there is a ReceiverVar (a receiver
+// variable name whose type couldn't be determined *locally* — see
+// parser.CallRef.ReceiverVar), resolution tries moduleVarTypes: if that
+// variable name was seen constructed as exactly one class anywhere in the
+// repo, the call routes to "<ThatClass>.<Name>"; otherwise it refuses,
+// same ambiguity policy as everywhere else.
+//
+// Only when the analyzer supplied neither (a genuinely receiver-less
+// call) does this fall back to the old bare-name heuristic.
 func (b *Builder) resolveCall(call parser.CallRef, fromID string) (string, bool) {
 	if call.ReceiverType == "" {
+		if call.ReceiverVar != "" {
+			classNames := b.moduleVarTypes[call.ReceiverVar]
+			if len(classNames) != 1 {
+				return "", false // unknown or ambiguous module-level variable name — refuse to guess
+			}
+			return b.resolveSingle(b.nameIndex[classNames[0]+"."+call.Name], fromID)
+		}
 		return b.resolveName(call.Name, fromID)
 	}
 

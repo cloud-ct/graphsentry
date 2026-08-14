@@ -34,6 +34,20 @@ const (
 type CallRef struct {
 	Name         string
 	ReceiverType string
+	// ReceiverVar is the receiver's raw identifier name — set only when
+	// ReceiverType couldn't be determined locally (ReceiverType == "")
+	// but the receiver is at least a plain variable name the builder
+	// might resolve another way: a module-level singleton constructed in
+	// a *different* file (`chat_service = ChatService()` at module scope,
+	// imported and called elsewhere as `chat_service.create_assistant()`)
+	// isn't visible to a single-file analyzer pass, but the graph builder
+	// sees every file's module-level vars at once (Builder.moduleVarTypes)
+	// and can resolve it there — precisely, and only when that variable
+	// name is unambiguous repo-wide, same ambiguity policy as everywhere
+	// else in this package. Both ReceiverType and ReceiverVar empty means
+	// a genuinely receiver-less call (bare `foo()`), which the builder
+	// resolves with the plain bare-name heuristic.
+	ReceiverVar string
 	// Line is the 1-based source line the call appears on, used by the
 	// graph builder to interleave Calls and Creates back into the order
 	// they're actually written in — the two are collected into separate
@@ -73,12 +87,22 @@ type Import struct {
 	Line int
 }
 
+// ModuleVar is a module/file-scope variable assignment whose type could be
+// determined syntactically — `chat_service = ChatService()` at the top
+// level of a Python module, for instance. See CallRef.ReceiverVar for how
+// the graph builder uses these across files.
+type ModuleVar struct {
+	Name     string
+	TypeName string
+}
+
 // FileAnalysis is everything extracted from a single source file.
 type FileAnalysis struct {
-	Path     string // repo-relative path
-	Language string
-	Symbols  []Symbol
-	Imports  []Import
+	Path       string // repo-relative path
+	Language   string
+	Symbols    []Symbol
+	Imports    []Import
+	ModuleVars []ModuleVar // module-scope variable -> type, when inferable; nil for languages/files where this doesn't apply
 }
 
 // LanguageAnalyzer extracts symbols and imports from source files of one

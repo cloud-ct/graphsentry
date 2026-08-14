@@ -111,7 +111,44 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 	}
 	walk(root)
 
+	for name, typeName := range collectModuleVarTypes(root, src) {
+		fa.ModuleVars = append(fa.ModuleVars, parser.ModuleVar{Name: name, TypeName: typeName})
+	}
+
 	return fa, nil
+}
+
+// collectModuleVarTypes scans a module's top-level statements (root's
+// direct children only — deliberately not recursive, so an assignment
+// inside a function or class body isn't mistaken for a module-scope one)
+// for `name = ClassName(...)` assignments. These are how Python code
+// commonly wires up singleton services (`chat_service = ChatService()` at
+// the bottom of chat_service.py, then `from chat_service import
+// chat_service` and `chat_service.create_assistant()` elsewhere) — a
+// cross-file pattern a single file's analyzer pass can't resolve on its
+// own, so it's surfaced here for the graph builder to reconcile once it's
+// seen every file (see parser.CallRef.ReceiverVar).
+func collectModuleVarTypes(root *sitter.Node, src []byte) map[string]string {
+	hints := map[string]string{}
+	for i := 0; i < int(root.NamedChildCount()); i++ {
+		stmt := root.NamedChild(i)
+		if stmt.Type() != "expression_statement" {
+			continue
+		}
+		assignment := findChildOfType(stmt, "assignment")
+		if assignment == nil {
+			continue
+		}
+		left := assignment.ChildByFieldName("left")
+		right := assignment.ChildByFieldName("right")
+		if left == nil || right == nil || left.Type() != "identifier" || right.Type() != "call" {
+			continue
+		}
+		if fn := right.ChildByFieldName("function"); fn != nil && fn.Type() == "identifier" {
+			hints[left.Content(src)] = fn.Content(src)
+		}
+	}
+	return hints
 }
 
 // isInsideClass reports whether n is nested (directly or via a
@@ -343,12 +380,12 @@ func extractCalls(n *sitter.Node, src []byte, className string, selfAttrs, local
 		if n.Type() == "call" {
 			fn := n.ChildByFieldName("function")
 			if fn != nil {
-				name, receiverType, ok := callTargetWithType(fn, src, className, selfAttrs, localHints)
+				name, receiverType, receiverVar, ok := callTargetWithType(fn, src, className, selfAttrs, localHints)
 				if ok {
-					key := receiverType + "\x00" + name
+					key := receiverType + "\x00" + receiverVar + "\x00" + name
 					if name != "" && !seen[key] {
 						seen[key] = true
-						calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType, Line: int(n.StartPoint().Row) + 1})
+						calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType, ReceiverVar: receiverVar, Line: int(n.StartPoint().Row) + 1})
 					}
 				}
 			}
@@ -361,56 +398,71 @@ func extractCalls(n *sitter.Node, src []byte, className string, selfAttrs, local
 	return calls
 }
 
-// callTargetWithType extracts a call's method/function name and, when the
-// receiver is one we can actually reason about, its type — returning
-// ok=false when it isn't, which tells extractCalls to drop the call
-// entirely instead of resolving it. This matters because Python has no
-// static typing to fall back on: a bare-name resolution "exactly one
-// candidate in the repo" shortcut has no type system stopping it from
-// matching a call through a completely unrelated, unresolvable receiver.
+// callTargetWithType extracts a call's method/function name and, when
+// possible, information about its receiver — a definite ReceiverType, a
+// ReceiverVar for the builder to try resolving cross-file (see
+// parser.CallRef.ReceiverVar), or neither for a receiver-less call.
+// ok=false tells extractCalls to drop the call entirely: Python has no
+// static typing to fall back on, so a bare-name "exactly one candidate in
+// the repo" shortcut has nothing stopping it from matching a call through
+// a completely unrelated, unresolvable receiver if it isn't refused here.
 // Concretely:
-//   - `foo()` (no receiver at all): ok=true, ReceiverType="" — the
-//     builder's same-file-preferring bare-name heuristic is reasonably
-//     safe here, since there's no receiver to be wrong about.
+//   - `foo()` (no receiver at all): ok=true, no type/var — the builder's
+//     same-file-preferring bare-name heuristic is reasonably safe here,
+//     since there's no receiver to be wrong about.
 //   - `self.method()`: ok=true, ReceiverType=className — calling another
 //     method of the same class, which we always know precisely.
-//   - `self.attr.method()` where self.attr was seen as
-//     `self.attr = ClassName(...)`: ok=true, ReceiverType=ClassName.
-//   - `local.method()` where local was seen as `local = ClassName(...)`:
-//     ok=true, ReceiverType=ClassName.
-//   - anything else — `self.attr.method()` with an untracked attr (e.g.
-//     set via constructor-injected `self.attr = attr`), a receiver that's
-//     itself a call's result, or any chain two or more attributes deep
-//     (`client.beta.threads.create()` — the type of the intermediate
-//     `client.beta.threads` isn't something we can know without a real
-//     type checker, even though `client` itself might be tracked): ok=false.
-//     Regression case: ChatService.chat_message called
-//     client.beta.threads.create() (an OpenAI SDK object, external to the
-//     repo) and it wrongly resolved to the repo's own, unrelated
-//     ChatController.create — the only other symbol named "create" —
-//     because this used to fall through to the bare-name heuristic with
-//     no receiver type at all.
-func callTargetWithType(fn *sitter.Node, src []byte, className string, selfAttrs, localHints map[string]string) (name, receiverType string, ok bool) {
+//   - `self.attr.method()` / `local.method()` where the receiver was seen
+//     constructed as `= ClassName(...)`: ok=true, ReceiverType=ClassName.
+//   - `local.method()` where local's type isn't locally inferable (e.g. a
+//     module-level singleton imported from elsewhere, or a constructor-
+//     injected attribute): ok=true, ReceiverVar=the raw identifier name —
+//     the builder tries resolving it against every file's module-level
+//     vars (parser.FileAnalysis.ModuleVars), which a single file's
+//     analyzer pass can't see.
+//   - `module.ClassName(...)` — attribute name is PascalCase, strongly
+//     suggesting a class constructor reached through an imported module
+//     rather than a method call: ok=true, no type/var, deferring to the
+//     bare-name heuristic keyed on the *class* name — much lower collision
+//     risk repo-wide than an arbitrary method name.
+//   - any chain two or more attributes deep (`client.beta.threads.create()`
+//     — the type of the intermediate `client.beta.threads` isn't
+//     something we can know without a real type checker, even though
+//     `client` itself might be tracked): ok=false. Regression case:
+//     ChatService.chat_message called client.beta.threads.create() (an
+//     OpenAI SDK object, external to the repo) and it wrongly resolved to
+//     the repo's own, unrelated ChatController.create — the only other
+//     symbol named "create" — because this used to fall through to the
+//     bare-name heuristic with no receiver information at all.
+func callTargetWithType(fn *sitter.Node, src []byte, className string, selfAttrs, localHints map[string]string) (name, receiverType, receiverVar string, ok bool) {
 	switch fn.Type() {
 	case "identifier":
-		return fn.Content(src), "", true
+		return fn.Content(src), "", "", true
 	case "attribute":
 		attrNode := fn.ChildByFieldName("attribute")
 		obj := fn.ChildByFieldName("object")
 		if attrNode == nil || obj == nil {
-			return "", "", false
+			return "", "", "", false
 		}
 		name = attrNode.Content(src)
 
 		if obj.Type() == "identifier" {
 			objName := obj.Content(src)
 			if objName == "self" {
-				return name, className, true
+				return name, className, "", true
 			}
 			if t, found := localHints[objName]; found {
-				return name, t, true
+				return name, t, "", true
 			}
-			return "", "", false // untyped receiver (e.g. a constructor-injected attribute) — refuse rather than guess
+			if isPascalCase(name) {
+				// `module_alias.ClassName(...)`: constructing a class
+				// reached through an imported module, not calling a
+				// method — defer to the bare-name heuristic on the class
+				// name itself, which collides far less often than an
+				// arbitrary method name would.
+				return name, "", "", true
+			}
+			return name, "", objName, true // untyped receiver — let the builder try resolving objName as a module-level singleton
 		}
 
 		// `self.attr.method()` — exactly one level of attribute chaining
@@ -423,13 +475,26 @@ func callTargetWithType(fn *sitter.Node, src []byte, className string, selfAttrs
 			innerAttr := obj.ChildByFieldName("attribute")
 			if innerObj != nil && innerAttr != nil && innerObj.Type() == "identifier" && innerObj.Content(src) == "self" {
 				if t, found := selfAttrs[innerAttr.Content(src)]; found {
-					return name, t, true
+					return name, t, "", true
 				}
 			}
 		}
-		return "", "", false
+		return "", "", "", false
 	}
-	return "", "", false
+	return "", "", "", false
+}
+
+// isPascalCase reports whether s looks like a Python class name by
+// convention (PEP 8): starts with an uppercase letter. Functions,
+// methods, and variables are conventionally snake_case, so this is a
+// cheap, reasonably reliable signal for "this attribute access is
+// constructing a class, not calling a method".
+func isPascalCase(s string) bool {
+	if s == "" {
+		return false
+	}
+	r := s[0]
+	return r >= 'A' && r <= 'Z'
 }
 
 // collectSelfAttrTypes scans an entire class body (every method, not just

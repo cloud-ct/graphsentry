@@ -151,3 +151,72 @@ func TestSelfMethodCallHasClassReceiverType(t *testing.T) {
 		t.Errorf("expected a single helper() call with ReceiverType Worker, got %+v", run.Calls)
 	}
 }
+
+// TestModuleVarConstructorIsTracked verifies that a module-level
+// `name = ClassName(...)` assignment is captured in FileAnalysis.ModuleVars
+// — this is the per-file half of the cross-file singleton-service pattern
+// (`chat_service = ChatService()` at the bottom of chat_service.py,
+// imported and called elsewhere); the graph builder reconciles these
+// across every analyzed file (see TestBuilderResolvesModuleLevelSingleton
+// in internal/graph).
+func TestModuleVarConstructorIsTracked(t *testing.T) {
+	const src = `class ChatService:
+    def create_assistant(self):
+        pass
+
+chat_service = ChatService()
+`
+	a := New()
+	fa, err := a.Analyze("chat_service.py", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+	found := false
+	for _, mv := range fa.ModuleVars {
+		if mv.Name == "chat_service" && mv.TypeName == "ChatService" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ModuleVars to include chat_service -> ChatService, got %+v", fa.ModuleVars)
+	}
+}
+
+// TestModuleConstructorCallFallsBackToBareName verifies the
+// `module_alias.ClassName(...)` pattern — constructing a class reached
+// through an imported module — resolves via the plain bare-name
+// heuristic (keyed on the PascalCase class name, not the receiver), since
+// there's no receiver type to track here at all: the "receiver" is a
+// module reference, not an object instance.
+func TestModuleConstructorCallFallsBackToBareName(t *testing.T) {
+	const src = `def build():
+    request = create_assistant_request.CreateAssistantRequest(name="x")
+    return request
+`
+	a := New()
+	fa, err := a.Analyze("builder.py", []byte(src))
+	if err != nil {
+		t.Fatalf("analyze failed: %v", err)
+	}
+	var fn *parser.Symbol
+	for i := range fa.Symbols {
+		if fa.Symbols[i].Name == "build" {
+			fn = &fa.Symbols[i]
+		}
+	}
+	if fn == nil {
+		t.Fatal("expected to find build function")
+	}
+	var call *parser.CallRef
+	for i := range fn.Calls {
+		if fn.Calls[i].Name == "CreateAssistantRequest" {
+			call = &fn.Calls[i]
+		}
+	}
+	if call == nil {
+		t.Fatal("expected a CreateAssistantRequest call")
+	}
+	if call.ReceiverType != "" || call.ReceiverVar != "" {
+		t.Errorf("expected no receiver type/var (bare-name fallback expected), got %+v", call)
+	}
+}
