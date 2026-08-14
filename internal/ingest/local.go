@@ -1,5 +1,5 @@
 // Package ingest resolves the local folder to analyze and enumerates its
-// source files by language. RepoLens operates entirely on code already on
+// source files by language. GraphSentry operates entirely on code already on
 // disk — most commonly the workspace already open in the VS Code
 // extension — it never fetches anything from a remote git host itself.
 package ingest
@@ -16,7 +16,7 @@ import (
 // string, no error, if it isn't — plenty of valid analysis targets, like
 // a bare folder of scripts, aren't). Shells out to the system `git`
 // rather than linking a git-plumbing library, since this is the only
-// thing RepoLens still needs one for.
+// thing GraphSentry still needs one for.
 func OpenLocal(path string) (commit string, err error) {
 	info, statErr := os.Stat(path)
 	if statErr != nil {

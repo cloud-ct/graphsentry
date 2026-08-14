@@ -58,9 +58,9 @@ export interface FlowResult {
   mermaid: string;
 }
 
-export class RepoLensError extends Error {}
+export class GraphSentryError extends Error {}
 
-export class RepoLensClient {
+export class GraphSentryClient {
   constructor(private context: vscode.ExtensionContext) {}
 
   /** Runs `graphsentry analyze <path>` for the given workspace folder. */
@@ -103,10 +103,10 @@ export class RepoLensClient {
       child.stderr.on("data", (buf: Buffer) => {
         stderr += buf.toString("utf8");
       });
-      child.on("error", (err) => reject(new RepoLensError(err.message)));
+      child.on("error", (err) => reject(new GraphSentryError(err.message)));
       child.on("close", (code) => {
         if (code !== 0) {
-          reject(new RepoLensError(stderr.trim() || `graphsentry ask exited with code ${code}`));
+          reject(new GraphSentryError(stderr.trim() || `graphsentry ask exited with code ${code}`));
           return;
         }
         resolve();
@@ -126,7 +126,7 @@ export class RepoLensClient {
       execFile(bin, args, { maxBuffer: 1024 * 1024 * 64, env: { ...process.env, ...providerEnv } }, (err, stdout, stderr) => {
         if (err) {
           const message = stderr.trim() || err.message;
-          reject(new RepoLensError(message));
+          reject(new GraphSentryError(message));
           return;
         }
         resolve(stdout);

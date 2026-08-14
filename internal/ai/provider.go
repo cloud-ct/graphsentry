@@ -29,7 +29,7 @@ type AskResponse struct {
 
 // Provider is the common interface every LLM backend implements. Adding a
 // new provider means implementing this interface and registering it in
-// NewProviderFromEnv/NewProvider — the rest of RepoLens is unaffected.
+// NewProviderFromEnv/NewProvider — the rest of GraphSentry is unaffected.
 type Provider interface {
 	// Name returns a short identifier, e.g. "anthropic".
 	Name() string

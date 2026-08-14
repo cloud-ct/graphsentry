@@ -1,14 +1,12 @@
-# RepoLens
+# GraphSentry
 
 [![CI](https://github.com/cloud-ct/graphsentry/actions/workflows/ci.yml/badge.svg)](https://github.com/cloud-ct/graphsentry/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Reference](https://img.shields.io/badge/go-1.25%2B-00ADD8)](https://go.dev)
 
-**RepoLens is the local-first code graph engine and CLI behind
-[GraphSentry](https://marketplace.visualstudio.com/items?itemName=cloudct.graphsentry),
-the VS Code extension that turns the workspace you already have open into
-an explorable code graph, then answers architecture questions about it —
-in plain English, with diagrams.**
+**GraphSentry is a VS Code extension that turns the workspace you already
+have open into an explorable code graph, then answers architecture
+questions about it — in plain English, with diagrams.**
 
 No cloning, no pointing it at a URL: it reads the folder that's already
 open in your editor. Everything runs locally — parsing, the graph, and the
@@ -17,14 +15,14 @@ Q&A) only ever sends the small subgraph relevant to your question.
 
 *(demo GIF — coming soon)*
 
-## Why RepoLens exists
+## Why GraphSentry exists
 
 Understanding an unfamiliar codebase — especially a large, multi-language
 one you just inherited — usually means grepping around and building a
-mental model by hand. RepoLens builds that model for you: it parses your
-workspace into a graph of files, symbols, and their relationships (calls,
-imports, implements), then lets you explore it two ways, right inside the
-editor:
+mental model by hand. GraphSentry builds that model for you: it parses
+your workspace into a graph of files, symbols, and their relationships
+(calls, imports, implements), then lets you explore it two ways, right
+inside the editor:
 
 - **Deterministically**, with zero LLM involved: "what breaks if I change
   this?", "what are the most coupled modules?", "show me the call flow for
@@ -32,8 +30,8 @@ editor:
   same answer, every time. CodeLens annotations surface impact and coupling
   inline, above every function.
 - **In natural language**, via the built-in Ask panel, when you want a
-  narrated explanation and a diagram. RepoLens only sends the LLM the small
-  subgraph relevant to your question — never your whole repository.
+  narrated explanation and a diagram. GraphSentry only sends the LLM the
+  small subgraph relevant to your question — never your whole repository.
 
 ## Install the VS Code extension
 
@@ -65,9 +63,9 @@ below.
 
 Only the Ask panel needs a key; every deterministic feature (impact,
 coupling, flow diagrams, CodeLens) works with zero configuration. Set your
-provider and key in the extension's settings (`RepoLens: Provider` /
-`RepoLens: API Key`), or via environment variables if you're using the CLI
-directly:
+provider and key in the extension's settings (`GraphSentry: Provider` /
+`GraphSentry: API Key`), or via environment variables if you're using the
+CLI directly:
 
 - **Anthropic** — `ANTHROPIC_API_KEY`
 - **OpenAI** — `OPENAI_API_KEY`
@@ -80,8 +78,8 @@ unaffected either way.
 
 ## Privacy
 
-RepoLens is **local-first**: it operates on the workspace already open on
-your machine and never uploads your source code anywhere by itself.
+GraphSentry is **local-first**: it operates on the workspace already open
+on your machine and never uploads your source code anywhere by itself.
 
 - Graph building, impact, coupling, and flow diagrams never make a network
   call to any AI provider — they parse your local files and query a local
@@ -95,7 +93,7 @@ your machine and never uploads your source code anywhere by itself.
 - Choosing the Ollama provider keeps everything, including the Ask panel,
   entirely on your machine.
 
-## RepoLens as a standalone CLI
+## GraphSentry as a standalone CLI
 
 The extension is powered by a Go CLI (`graphsentry`) that you can also use
 directly — handy for CI, scripting, or exploring a repo from a terminal.
@@ -115,7 +113,7 @@ go build -o graphsentry ./cmd/graphsentry
 Requires Go 1.25+ (a transitive dependency of the pure-Go SQLite driver
 pins this; `go build` auto-fetches the right toolchain if yours is older,
 as long as `GOTOOLCHAIN` is not set to `local`). No Docker, no external
-database — RepoLens stores its graph in a local SQLite file under
+database — GraphSentry stores its graph in a local SQLite file under
 `~/.graphsentry/`.
 
 ```bash
@@ -135,8 +133,8 @@ graphsentry ask "How does user creation work?" # needs an LLM key — see above
 
 Every command supports `--repo <path>` to target a specific analyzed
 folder; if omitted, it defaults to whatever you last ran `analyze` on.
-RepoLens only ever reads from a path already on disk — it doesn't clone or
-fetch anything itself, so a repo needs to already be checked out (exactly
+GraphSentry only ever reads from a path already on disk — it doesn't clone
+or fetch anything itself, so a repo needs to already be checked out (exactly
 what the VS Code extension does for you automatically with the open
 workspace).
 
@@ -163,20 +161,20 @@ Implement it under `internal/parser/<language>/`, using
 
 ```
 graphsentry/
-├── cmd/graphsentry/            # CLI entry point + cobra commands
+├── cmd/graphsentry/           # CLI entry point + cobra commands
 ├── internal/
-│   ├── ingest/               # local folder resolution, file discovery by language
+│   ├── ingest/                # local folder resolution, file discovery by language
 │   ├── parser/                # LanguageAnalyzer interface + tree-sitter analyzers
 │   │   ├── golang/            # Go
 │   │   ├── typescript/        # TypeScript / JavaScript
 │   │   ├── csharp/            # C#
 │   │   └── python/            # Python
-│   ├── graph/                  # node/edge model, SQLite store, deterministic queries
+│   ├── graph/                 # node/edge model, SQLite store, deterministic queries
 │   ├── diagram/                # ASCII + Mermaid rendering from subgraphs
 │   └── ai/                      # Provider interface + anthropic/openai/ollama
 │       └── prompts/             # ask prompt templates
 ├── editors/vscode/           # the VS Code extension (primary product)
-└── examples/sample-app/      # tiny Go + TS app to try RepoLens without a real repo
+└── examples/sample-app/      # tiny Go + TS app to try GraphSentry without a real repo
 ```
 
 The graph answers structural questions first, deterministically; the LLM is

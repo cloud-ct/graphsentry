@@ -1,4 +1,4 @@
-// A tiny Express controller, part of the RepoLens sample app.
+// A tiny Express controller, part of the GraphSentry sample app.
 import express from "express";
 
 const router = express.Router();

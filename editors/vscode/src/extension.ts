@@ -1,28 +1,28 @@
 import * as vscode from "vscode";
-import { RepoLensClient, RepoLensError, displayName, FlowResult, GraphNode } from "./repolens";
-import { RepoLensCodeLensProvider } from "./codeLensProvider";
+import { GraphSentryClient, GraphSentryError, displayName, FlowResult, GraphNode } from "./client";
+import { GraphSentryCodeLensProvider } from "./codeLensProvider";
 import { configureProvider, clearProvider, hasProviderConfigured } from "./config";
-import { RepoLensSidebarProvider } from "./sidebarView";
+import { GraphSentrySidebarProvider } from "./sidebarView";
 
-let client: RepoLensClient;
+let client: GraphSentryClient;
 let outputChannel: vscode.OutputChannel;
-let codeLensProvider: RepoLensCodeLensProvider;
+let codeLensProvider: GraphSentryCodeLensProvider;
 let extensionUri: vscode.Uri;
 let extContext: vscode.ExtensionContext;
 
 export function activate(context: vscode.ExtensionContext) {
   extContext = context;
   extensionUri = context.extensionUri;
-  client = new RepoLensClient(context);
+  client = new GraphSentryClient(context);
   outputChannel = vscode.window.createOutputChannel("GraphSentry");
   context.subscriptions.push(outputChannel);
 
-  codeLensProvider = new RepoLensCodeLensProvider(client);
+  codeLensProvider = new GraphSentryCodeLensProvider(client);
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider({ scheme: "file" }, codeLensProvider)
   );
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("graphsentry.commands", new RepoLensSidebarProvider())
+    vscode.window.registerTreeDataProvider("graphsentry.commands", new GraphSentrySidebarProvider())
   );
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -89,7 +89,7 @@ async function withErrorHandling<T>(action: () => Promise<T>): Promise<T | undef
   try {
     return await action();
   } catch (err) {
-    const message = err instanceof RepoLensError ? err.message : String(err);
+    const message = err instanceof GraphSentryError ? err.message : String(err);
     vscode.window.showErrorMessage(`GraphSentry: ${message}`);
     outputChannel.appendLine(message);
     return undefined;
@@ -272,7 +272,7 @@ function showFlowPanel(repoPath: string, symbol: string, result: FlowResult) {
           });
           panel.webview.postMessage({ command: "askDone" });
         } catch (err) {
-          const message = err instanceof RepoLensError ? err.message : String(err);
+          const message = err instanceof GraphSentryError ? err.message : String(err);
           panel.webview.postMessage({ command: "askError", message });
         }
         return;
@@ -297,7 +297,7 @@ function nonce(): string {
 // Renders the flow diagram using mermaid.js + svg-pan-zoom, both vendored
 // into media/ at build time (see scripts/copy-assets.js) rather than
 // loaded from a CDN, so the panel works fully offline and needs no CSP
-// exception for a remote host — matching RepoLens's local-first stance end
+// exception for a remote host — matching GraphSentry's local-first stance end
 // to end, not just in the graph computation.
 //
 // mermaid.render() (not the startOnLoad auto-scan) is used deliberately:

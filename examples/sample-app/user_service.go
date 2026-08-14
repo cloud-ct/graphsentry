@@ -1,4 +1,4 @@
-// Package service is a tiny sample app used to try RepoLens without
+// Package service is a tiny sample app used to try GraphSentry without
 // pointing it at a real (possibly private) repository.
 package service
 

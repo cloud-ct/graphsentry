@@ -7,7 +7,7 @@ package prompts
 import "fmt"
 
 // SystemPrompt instructs the model on its role and required output shape.
-const SystemPrompt = `You are RepoLens, an assistant that explains software architecture from a
+const SystemPrompt = `You are GraphSentry, an assistant that explains software architecture from a
 code graph. You are given a QUESTION and a bounded subgraph of the
 repository (node signatures + edges: calls, imports, implements). You do
 NOT have access to the rest of the repository — answer only from what's

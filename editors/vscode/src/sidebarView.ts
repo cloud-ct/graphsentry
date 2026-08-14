@@ -1,4 +1,4 @@
-// A simple command-shortcut list in RepoLens's own Activity Bar view
+// A simple command-shortcut list in GraphSentry's own Activity Bar view
 // container, so the common actions are one click away instead of requiring
 // the command palette (Ctrl+Shift+P). Deliberately just a flat TreeView of
 // clickable items — no state, no expansion — since every action here is a
@@ -34,7 +34,7 @@ class CommandTreeItem extends vscode.TreeItem {
   }
 }
 
-export class RepoLensSidebarProvider implements vscode.TreeDataProvider<CommandTreeItem> {
+export class GraphSentrySidebarProvider implements vscode.TreeDataProvider<CommandTreeItem> {
   getTreeItem(element: CommandTreeItem): vscode.TreeItem {
     return element;
   }

@@ -2,7 +2,7 @@
   "name": "graphsentry",
   "displayName": "GraphSentry",
   "description": "Local-first, multi-language code graph explorer. Ask architecture questions, see impact analysis and call-flow diagrams, right inside VS Code.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "cloudct",
   "license": "MIT",
   "icon": "images/icon.png",
