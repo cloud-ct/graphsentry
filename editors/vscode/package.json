@@ -1,6 +1,6 @@
 {
-  "name": "repolens",
-  "displayName": "RepoLens",
+  "name": "graphsentry",
+  "displayName": "GraphSentry",
   "description": "Local-first, multi-language code graph explorer. Ask architecture questions, see impact analysis and call-flow diagrams, right inside VS Code.",
   "version": "0.1.0",
   "publisher": "cloudct",
@@ -38,71 +38,71 @@
   "contributes": {
     "commands": [
       {
-        "command": "repolens.analyze",
-        "title": "RepoLens: Analyze Workspace",
+        "command": "graphsentry.analyze",
+        "title": "GraphSentry: Analyze Workspace",
         "icon": "$(graph)"
       },
       {
-        "command": "repolens.coupling",
-        "title": "RepoLens: Show Most Coupled Symbols"
+        "command": "graphsentry.coupling",
+        "title": "GraphSentry: Show Most Coupled Symbols"
       },
       {
-        "command": "repolens.impact",
-        "title": "RepoLens: Impact Analysis for Symbol at Cursor"
+        "command": "graphsentry.impact",
+        "title": "GraphSentry: Impact Analysis for Symbol at Cursor"
       },
       {
-        "command": "repolens.configureProvider",
-        "title": "RepoLens: Configure LLM Provider (API Key for Ask)"
+        "command": "graphsentry.configureProvider",
+        "title": "GraphSentry: Configure LLM Provider (API Key for Ask)"
       },
       {
-        "command": "repolens.clearProvider",
-        "title": "RepoLens: Clear LLM Provider Configuration"
+        "command": "graphsentry.clearProvider",
+        "title": "GraphSentry: Clear LLM Provider Configuration"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "command": "repolens.impact",
-          "group": "repolens",
+          "command": "graphsentry.impact",
+          "group": "graphsentry",
           "when": "editorHasSelection == false"
         }
       ],
       "commandPalette": [
-        { "command": "repolens.analyze" },
-        { "command": "repolens.coupling" },
-        { "command": "repolens.impact" },
-        { "command": "repolens.configureProvider" },
-        { "command": "repolens.clearProvider" },
-        { "command": "repolens.flow", "when": "false" },
-        { "command": "repolens.ask", "when": "false" }
+        { "command": "graphsentry.analyze" },
+        { "command": "graphsentry.coupling" },
+        { "command": "graphsentry.impact" },
+        { "command": "graphsentry.configureProvider" },
+        { "command": "graphsentry.clearProvider" },
+        { "command": "graphsentry.flow", "when": "false" },
+        { "command": "graphsentry.ask", "when": "false" }
       ]
     },
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "repolens",
-          "title": "RepoLens",
+          "id": "graphsentry",
+          "title": "GraphSentry",
           "icon": "images/activitybar-icon.svg"
         }
       ]
     },
     "views": {
-      "repolens": [
+      "graphsentry": [
         {
-          "id": "repolens.commands",
+          "id": "graphsentry.commands",
           "name": "Commands"
         }
       ]
     },
     "configuration": {
-      "title": "RepoLens",
+      "title": "GraphSentry",
       "properties": {
-        "repolens.binaryPath": {
+        "graphsentry.binaryPath": {
           "type": "string",
           "default": "",
           "description": "Path to a repolens binary to use instead of the extension's auto-downloaded copy. Leave empty to let the extension manage it."
         },
-        "repolens.codeLens.enabled": {
+        "graphsentry.codeLens.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Show inline dependents/dependencies counts and a 'Show flow' link above analyzed symbols."

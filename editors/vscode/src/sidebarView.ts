@@ -19,10 +19,10 @@ interface CommandEntry {
 // directly; a generic entry point here would just re-prompt for what the
 // CodeLens click already knows.
 const ENTRIES: CommandEntry[] = [
-  { label: "Analyze Workspace", description: "Build/refresh the code graph", command: "repolens.analyze", icon: "sync" },
-  { label: "Most Coupled Symbols", description: "Fan-in + fan-out ranking", command: "repolens.coupling", icon: "graph" },
-  { label: "Impact Analysis", description: "Symbol at cursor", command: "repolens.impact", icon: "references" },
-  { label: "Configure LLM Provider", description: "API key for Ask", command: "repolens.configureProvider", icon: "key" },
+  { label: "Analyze Workspace", description: "Build/refresh the code graph", command: "graphsentry.analyze", icon: "sync" },
+  { label: "Most Coupled Symbols", description: "Fan-in + fan-out ranking", command: "graphsentry.coupling", icon: "graph" },
+  { label: "Impact Analysis", description: "Symbol at cursor", command: "graphsentry.impact", icon: "references" },
+  { label: "Configure LLM Provider", description: "API key for Ask", command: "graphsentry.configureProvider", icon: "key" },
 ];
 
 class CommandTreeItem extends vscode.TreeItem {

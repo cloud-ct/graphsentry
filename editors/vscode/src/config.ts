@@ -7,10 +7,10 @@
 // per-project setting workspace settings.json is meant for.
 import * as vscode from "vscode";
 
-const PROVIDER_KEY = "repolens.provider";
-const OLLAMA_HOST_KEY = "repolens.ollamaHost";
-const ANTHROPIC_SECRET = "repolens.anthropicApiKey";
-const OPENAI_SECRET = "repolens.openaiApiKey";
+const PROVIDER_KEY = "graphsentry.provider";
+const OLLAMA_HOST_KEY = "graphsentry.ollamaHost";
+const ANTHROPIC_SECRET = "graphsentry.anthropicApiKey";
+const OPENAI_SECRET = "graphsentry.openaiApiKey";
 
 interface ProviderChoice {
   label: string;
@@ -26,11 +26,11 @@ const PROVIDERS: ProviderChoice[] = [
 
 /** Prompts the user for a provider and its key/host, storing the key in
  * SecretStorage (or the host in globalState for Ollama). Invoked by the
- * "RepoLens: Configure LLM Provider" command. */
+ * "GraphSentry: Configure LLM Provider" command. */
 export async function configureProvider(context: vscode.ExtensionContext): Promise<void> {
   const picked = await vscode.window.showQuickPick(
     PROVIDERS.map((p) => ({ label: p.label, description: p.description, provider: p })),
-    { title: "RepoLens: choose an LLM provider for 'Ask'", ignoreFocusOut: true }
+    { title: "GraphSentry: choose an LLM provider for 'Ask'", ignoreFocusOut: true }
   );
   if (!picked) return;
   const provider = picked.provider;
@@ -44,7 +44,7 @@ export async function configureProvider(context: vscode.ExtensionContext): Promi
     if (host === undefined) return;
     await context.globalState.update(OLLAMA_HOST_KEY, host);
     await context.globalState.update(PROVIDER_KEY, "ollama");
-    vscode.window.showInformationMessage("RepoLens: configured to use Ollama.");
+    vscode.window.showInformationMessage("GraphSentry: configured to use Ollama.");
     return;
   }
 
@@ -59,7 +59,7 @@ export async function configureProvider(context: vscode.ExtensionContext): Promi
 
   await context.secrets.store(secretKey, key);
   await context.globalState.update(PROVIDER_KEY, provider.value);
-  vscode.window.showInformationMessage(`RepoLens: ${provider.label} configured. The key is stored in VS Code's Secret Storage, not in settings.json.`);
+  vscode.window.showInformationMessage(`GraphSentry: ${provider.label} configured. The key is stored in VS Code's Secret Storage, not in settings.json.`);
 }
 
 /** Removes the stored provider/key configuration. */
@@ -68,7 +68,7 @@ export async function clearProvider(context: vscode.ExtensionContext): Promise<v
   await context.secrets.delete(OPENAI_SECRET);
   await context.globalState.update(PROVIDER_KEY, undefined);
   await context.globalState.update(OLLAMA_HOST_KEY, undefined);
-  vscode.window.showInformationMessage("RepoLens: LLM provider configuration cleared.");
+  vscode.window.showInformationMessage("GraphSentry: LLM provider configuration cleared.");
 }
 
 /** Resolves the environment variables to pass to the repolens CLI

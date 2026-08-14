@@ -28,12 +28,12 @@ function currentTarget(): PlatformTarget {
 
   const os = platform === "win32" ? "windows" : platform === "darwin" ? "darwin" : "linux";
   if (os !== "linux" && os !== "darwin" && os !== "windows") {
-    throw new Error(`RepoLens does not ship a binary for platform "${platform}". You can build one yourself from https://github.com/${REPO} and set the "repolens.binaryPath" setting.`);
+    throw new Error(`GraphSentry does not ship a binary for platform "${platform}". You can build one yourself from https://github.com/${REPO} and set the "graphsentry.binaryPath" setting.`);
   }
 
   const mappedArch = arch === "arm64" ? "arm64" : "amd64";
   if (arch !== "arm64" && arch !== "x64") {
-    throw new Error(`RepoLens does not ship a binary for architecture "${arch}". You can build one yourself from https://github.com/${REPO} and set the "repolens.binaryPath" setting.`);
+    throw new Error(`GraphSentry does not ship a binary for architecture "${arch}". You can build one yourself from https://github.com/${REPO} and set the "graphsentry.binaryPath" setting.`);
   }
 
   return { os, arch: mappedArch, ext: os === "windows" ? ".exe" : "" };
@@ -46,11 +46,11 @@ function assetName(target: PlatformTarget): string {
 /**
  * Returns the path to a usable repolens binary, downloading it into the
  * extension's global storage on first use. Honors the
- * "repolens.binaryPath" setting as an escape hatch for users who'd rather
+ * "graphsentry.binaryPath" setting as an escape hatch for users who'd rather
  * manage their own install (e.g. via `go install`).
  */
 export async function getBinaryPath(context: vscode.ExtensionContext): Promise<string> {
-  const override = vscode.workspace.getConfiguration("repolens").get<string>("binaryPath");
+  const override = vscode.workspace.getConfiguration("graphsentry").get<string>("binaryPath");
   if (override && override.trim().length > 0) {
     return override.trim();
   }
@@ -69,7 +69,7 @@ export async function getBinaryPath(context: vscode.ExtensionContext): Promise<s
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: "RepoLens: downloading the repolens CLI binary...",
+      title: "GraphSentry: downloading the repolens CLI binary...",
       cancellable: false,
     },
     () => downloadFile(url, destPath)

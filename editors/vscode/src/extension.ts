@@ -14,7 +14,7 @@ export function activate(context: vscode.ExtensionContext) {
   extContext = context;
   extensionUri = context.extensionUri;
   client = new RepoLensClient(context);
-  outputChannel = vscode.window.createOutputChannel("RepoLens");
+  outputChannel = vscode.window.createOutputChannel("GraphSentry");
   context.subscriptions.push(outputChannel);
 
   codeLensProvider = new RepoLensCodeLensProvider(client);
@@ -22,28 +22,28 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCodeLensProvider({ scheme: "file" }, codeLensProvider)
   );
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("repolens.commands", new RepoLensSidebarProvider())
+    vscode.window.registerTreeDataProvider("graphsentry.commands", new RepoLensSidebarProvider())
   );
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("repolens.codeLens.enabled")) {
+      if (e.affectsConfiguration("graphsentry.codeLens.enabled")) {
         codeLensProvider.notifyChanged();
       }
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("repolens.analyze", () => runAnalyze()),
-    vscode.commands.registerCommand("repolens.coupling", () => runCoupling()),
-    vscode.commands.registerCommand("repolens.impact", (symbol?: string) => runImpact(symbol)),
+    vscode.commands.registerCommand("graphsentry.analyze", () => runAnalyze()),
+    vscode.commands.registerCommand("graphsentry.coupling", () => runCoupling()),
+    vscode.commands.registerCommand("graphsentry.impact", (symbol?: string) => runImpact(symbol)),
     // repolens.flow has no palette/menu/sidebar entry (see package.json)
     // — it's only ever invoked with an explicit symbol id, from a CodeLens
     // click. repolens.ask no longer exists as a standalone command at
     // all: the flow panel's own Ask box (scoped to whatever flow is on
     // screen) replaced it entirely.
-    vscode.commands.registerCommand("repolens.flow", (symbol?: string) => runFlow(symbol)),
-    vscode.commands.registerCommand("repolens.configureProvider", () => configureProvider(context)),
-    vscode.commands.registerCommand("repolens.clearProvider", () => clearProvider(context))
+    vscode.commands.registerCommand("graphsentry.flow", (symbol?: string) => runFlow(symbol)),
+    vscode.commands.registerCommand("graphsentry.configureProvider", () => configureProvider(context)),
+    vscode.commands.registerCommand("graphsentry.clearProvider", () => clearProvider(context))
   );
 
   // Pick up a repo analyzed in a previous session so CodeLenses appear
@@ -68,7 +68,7 @@ export function deactivate() {}
 async function currentWorkspacePath(): Promise<string | undefined> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
-    vscode.window.showErrorMessage("RepoLens: open a folder or workspace first.");
+    vscode.window.showErrorMessage("GraphSentry: open a folder or workspace first.");
     return undefined;
   }
   if (folders.length === 1) {
@@ -81,7 +81,7 @@ async function currentWorkspacePath(): Promise<string | undefined> {
     if (owning) return owning.uri.fsPath;
   }
 
-  const picked = await vscode.window.showWorkspaceFolderPick({ placeHolder: "Which workspace folder should RepoLens use?" });
+  const picked = await vscode.window.showWorkspaceFolderPick({ placeHolder: "Which workspace folder should GraphSentry use?" });
   return picked?.uri.fsPath;
 }
 
@@ -90,7 +90,7 @@ async function withErrorHandling<T>(action: () => Promise<T>): Promise<T | undef
     return await action();
   } catch (err) {
     const message = err instanceof RepoLensError ? err.message : String(err);
-    vscode.window.showErrorMessage(`RepoLens: ${message}`);
+    vscode.window.showErrorMessage(`GraphSentry: ${message}`);
     outputChannel.appendLine(message);
     return undefined;
   }
@@ -102,10 +102,10 @@ async function runAnalyze() {
 
   await withErrorHandling(async () => {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "RepoLens: analyzing workspace..." },
+      { location: vscode.ProgressLocation.Notification, title: "GraphSentry: analyzing workspace..." },
       () => client.analyze(repoPath)
     );
-    vscode.window.showInformationMessage("RepoLens: analysis complete.");
+    vscode.window.showInformationMessage("GraphSentry: analysis complete.");
     await codeLensProvider.refresh(repoPath);
   });
 }
@@ -118,7 +118,7 @@ async function runCoupling() {
   if (!scores) return;
 
   if (scores.length === 0) {
-    vscode.window.showInformationMessage("RepoLens: no coupling data. Run 'RepoLens: Analyze Workspace' first.");
+    vscode.window.showInformationMessage("GraphSentry: no coupling data. Run 'GraphSentry: Analyze Workspace' first.");
     return;
   }
 
@@ -202,7 +202,7 @@ async function runImpact(symbolArg?: string) {
   if (!result) return;
 
   if (result.impacted.length === 0) {
-    vscode.window.showInformationMessage(`RepoLens: nothing depends on "${symbolLabel(symbol)}" — safe to change in isolation.`);
+    vscode.window.showInformationMessage(`GraphSentry: nothing depends on "${symbolLabel(symbol)}" — safe to change in isolation.`);
     return;
   }
 
@@ -238,7 +238,7 @@ function showFlowPanel(repoPath: string, symbol: string, result: FlowResult) {
   const mediaDir = vscode.Uri.joinPath(extensionUri, "media");
   const panel = vscode.window.createWebviewPanel(
     "repolensFlow",
-    `RepoLens: flow of ${symbol}`,
+    `GraphSentry: flow of ${symbol}`,
     vscode.ViewColumn.Beside,
     { enableScripts: true, localResourceRoots: [mediaDir] }
   );
@@ -256,7 +256,7 @@ function showFlowPanel(repoPath: string, symbol: string, result: FlowResult) {
         if (!hasProviderConfigured(extContext)) {
           panel.webview.postMessage({
             command: "askError",
-            message: "No LLM provider configured yet. Run 'RepoLens: Configure LLM Provider' from the command palette, then ask again.",
+            message: "No LLM provider configured yet. Run 'GraphSentry: Configure LLM Provider' from the command palette, then ask again.",
           });
           return;
         }

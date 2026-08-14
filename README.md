@@ -4,9 +4,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Reference](https://img.shields.io/badge/go-1.25%2B-00ADD8)](https://go.dev)
 
-**RepoLens is a VS Code extension that turns the workspace you already have
-open into an explorable code graph, then answers architecture questions
-about it — in plain English, with diagrams.**
+**RepoLens is the local-first code graph engine and CLI behind
+[GraphSentry](https://marketplace.visualstudio.com/items?itemName=cloudct.graphsentry),
+the VS Code extension that turns the workspace you already have open into
+an explorable code graph, then answers architecture questions about it —
+in plain English, with diagrams.**
 
 No cloning, no pointing it at a URL: it reads the folder that's already
 open in your editor. Everything runs locally — parsing, the graph, and the
@@ -35,10 +37,10 @@ editor:
 
 ## Install the VS Code extension
 
-Search for **RepoLens** in the VS Code Marketplace, or install directly:
+Search for **GraphSentry** in the VS Code Marketplace, or install directly:
 
 ```
-ext install cloudct.repolens
+ext install cloudct.graphsentry
 ```
 
 Open a project, wait for the sidebar's "Analyze workspace" step to finish,
