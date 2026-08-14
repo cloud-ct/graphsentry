@@ -75,7 +75,8 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 				break
 			}
 			name := text(nameNode)
-			start, end := line(n)
+			_, end := line(n)
+			start := declarationLine(n) // skip past leading [Attribute] lines (e.g. [ApiController], [Route(...)])
 			kind := parser.KindClass
 			if n.Type() == "interface_declaration" {
 				kind = parser.KindInterface
@@ -236,7 +237,8 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes ma
 			return
 		}
 		mName := text(nameNode)
-		start, end := line(n)
+		_, end := line(n)
+		start := declarationLine(n) // skip past leading [Attribute] lines to the method's own signature
 
 		hints := make(map[string]string, len(fieldTypes))
 		for k, v := range fieldTypes {
@@ -299,13 +301,34 @@ func attributeRoute(n *sitter.Node, src []byte, attrName string) string {
 // attribute ([HttpGet], [HttpPost("id")], ...) and returns the verb and
 // route argument (possibly empty).
 func endpointFromAttributes(n *sitter.Node, src []byte) (verb, route string) {
+	found := false
 	for _, al := range attributeLists(n) {
 		name, arg := parseAttribute(al, src)
 		if m := httpVerbAttr.FindStringSubmatch(name); m != nil {
-			return strings.ToUpper(m[1]), arg
+			found = true
+			verb = strings.ToUpper(m[1])
+			route = arg
+			break
 		}
 	}
-	return "", ""
+	if !found {
+		return "", ""
+	}
+	if route == "" {
+		// ASP.NET lets the route live on a separate [Route(...)] attribute
+		// instead of inline on the verb attribute — e.g. [HttpPost]
+		// [Route("hubspot-message-comes-in")] rather than
+		// [HttpPost("hubspot-message-comes-in")]. Missing this fallback
+		// silently produced the *same* qualified endpoint name (just the
+		// class-level route, with nothing method-specific appended) for
+		// every verb-only handler in a controller — a real bug, not just
+		// a display quirk: two such handlers collide on the same node ID
+		// (symbolID is path+qualified), so the second one silently
+		// overwrites the first in the graph, and "flow"/"impact" on
+		// either one shows a mix of both handlers' edges.
+		route = attributeRoute(n, src, "Route")
+	}
+	return verb, route
 }
 
 // attributeLists returns the attribute_list nodes attached to a
@@ -345,6 +368,25 @@ func parseAttribute(attrList *sitter.Node, src []byte) (name, arg string) {
 }
 
 // findChildOfType returns the first direct child of n with the given type.
+// declarationLine returns the 1-based line where a declaration's own
+// syntax actually begins, skipping past any leading [Attribute] lines —
+// tree-sitter-c-sharp nests those as the first children of the
+// method_declaration/class_declaration node itself, so n's own start line
+// is wherever the FIRST attribute sits, not the method signature. A method
+// with several stacked attributes (common with ASP.NET actions —
+// [HttpPost], [Authorize], [EndpointSummary], ...) would otherwise anchor
+// its graph node (and therefore its CodeLens) several lines above the
+// method it actually describes, reading as if it belonged to the
+// attribute block rather than the method.
+func declarationLine(n *sitter.Node) int {
+	for i := 0; i < int(n.ChildCount()); i++ {
+		if c := n.Child(i); c.Type() != "attribute_list" {
+			return int(c.StartPoint().Row) + 1
+		}
+	}
+	return int(n.StartPoint().Row) + 1
+}
+
 func findChildOfType(n *sitter.Node, t string) *sitter.Node {
 	for i := 0; i < int(n.ChildCount()); i++ {
 		if c := n.Child(i); c.Type() == t {
