@@ -88,8 +88,9 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 				Implements: implements,
 			})
 			if body := n.ChildByFieldName("body"); body != nil {
+				selfAttrs := collectSelfAttrTypes(body, src)
 				for i := 0; i < int(body.NamedChildCount()); i++ {
-					collectFunction(body.NamedChild(i), className, fa, src, line, text)
+					collectFunction(body.NamedChild(i), className, selfAttrs, fa, src, line, text)
 				}
 			}
 			return
@@ -101,7 +102,7 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 			if isInsideClass(n) {
 				break
 			}
-			collectFunction(n, "", fa, src, line, text)
+			collectFunction(n, "", nil, fa, src, line, text)
 			return
 		}
 		for i := 0; i < int(n.ChildCount()); i++ {
@@ -132,8 +133,11 @@ func isInsideClass(n *sitter.Node) bool {
 // collectFunction handles both a bare function_definition and a
 // decorated_definition wrapping one, registering it as a function/method
 // symbol and, if it carries a recognizable route decorator, an additional
-// endpoint symbol.
-func collectFunction(n *sitter.Node, className string, fa *parser.FileAnalysis, src []byte,
+// endpoint symbol. selfAttrs (nil for module-level functions, which have
+// no `self`) supplies the class's self.attr -> ClassName type hints so
+// calls through them can be scoped instead of falling back to a repo-wide
+// bare-name guess.
+func collectFunction(n *sitter.Node, className string, selfAttrs map[string]string, fa *parser.FileAnalysis, src []byte,
 	line func(*sitter.Node) (int, int), text func(*sitter.Node) string) {
 	if n == nil {
 		return
@@ -166,11 +170,17 @@ func collectFunction(n *sitter.Node, className string, fa *parser.FileAnalysis, 
 		kind = parser.KindMethod
 	}
 	start, end := line(n)
+
+	localHints := map[string]string{}
+	if body := funcNode.ChildByFieldName("body"); body != nil {
+		collectLocalVarTypes(body, src, localHints)
+	}
+
 	fa.Symbols = append(fa.Symbols, parser.Symbol{
 		Kind: kind, Name: fName, Qualified: qualified,
 		StartLine: start, EndLine: end,
 		Signature: signatureLine(text(funcNode)),
-		Calls:     extractCalls(funcNode, src),
+		Calls:     extractCalls(funcNode, src, selfAttrs, localHints),
 	})
 
 	if verb, route := endpointFromDecorators(decorators, src); verb != "" {
@@ -312,11 +322,15 @@ func signatureLine(full string) string {
 	return full
 }
 
-// extractCalls walks a function body collecting call target names — plain
-// identifier calls (foo()) and the rightmost attribute of member calls
-// (obj.method() -> "method"). The graph builder resolves these against
-// known symbols; over-reporting is fine, unresolved names are dropped.
-func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
+// extractCalls walks a function body collecting call targets: plain
+// identifier calls (foo()) and member calls (obj.method()), the latter
+// tagged with a ReceiverType when selfAttrs/localHints can resolve one
+// (see collectSelfAttrTypes/collectLocalVarTypes) — the graph builder then
+// resolves a hinted call within that specific class instead of guessing
+// from every same-named method in the repo. Over-reporting an unhinted
+// bare call is fine; the builder's bare-name heuristic drops it rather
+// than resolving it if it's ambiguous.
+func extractCalls(n *sitter.Node, src []byte, selfAttrs, localHints map[string]string) []parser.CallRef {
 	seen := map[string]bool{}
 	var calls []parser.CallRef
 	var walk func(n *sitter.Node)
@@ -327,10 +341,11 @@ func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
 		if n.Type() == "call" {
 			fn := n.ChildByFieldName("function")
 			if fn != nil {
-				name := callTarget(fn, src)
-				if name != "" && !seen[name] {
-					seen[name] = true
-					calls = append(calls, parser.CallRef{Name: name, Line: int(n.StartPoint().Row) + 1})
+				name, receiverType := callTargetWithType(fn, src, selfAttrs, localHints)
+				key := receiverType + "\x00" + name
+				if name != "" && !seen[key] {
+					seen[key] = true
+					calls = append(calls, parser.CallRef{Name: name, ReceiverType: receiverType, Line: int(n.StartPoint().Row) + 1})
 				}
 			}
 		}
@@ -342,14 +357,107 @@ func extractCalls(n *sitter.Node, src []byte) []parser.CallRef {
 	return calls
 }
 
-func callTarget(fn *sitter.Node, src []byte) string {
+// callTargetWithType extracts a call's method/function name and, when
+// possible, the type of its receiver: `self.attr.method()` resolves via
+// selfAttrs (the class's tracked self.attr = ClassName(...) assignments);
+// `local.method()` resolves via localHints (this function's tracked
+// `x = ClassName(...)` assignments). Anything else — chained/dynamic
+// attribute access, a receiver whose type couldn't be inferred (e.g.
+// passed in via dependency injection rather than constructed locally) —
+// yields no hint, and the call falls back to the bare-name heuristic.
+func callTargetWithType(fn *sitter.Node, src []byte, selfAttrs, localHints map[string]string) (name, receiverType string) {
 	switch fn.Type() {
 	case "identifier":
-		return fn.Content(src)
+		return fn.Content(src), ""
 	case "attribute":
-		if attr := fn.ChildByFieldName("attribute"); attr != nil {
-			return attr.Content(src)
+		attrNode := fn.ChildByFieldName("attribute")
+		if attrNode == nil {
+			return "", ""
 		}
+		name = attrNode.Content(src)
+		if obj := fn.ChildByFieldName("object"); obj != nil {
+			receiverType = receiverTypeOf(obj, src, selfAttrs, localHints)
+		}
+		return name, receiverType
+	}
+	return "", ""
+}
+
+// receiverTypeOf resolves the tracked type of a call's receiver
+// expression: `self.attr` (obj is itself an `attribute` node) via
+// selfAttrs, or a plain local variable identifier via localHints.
+func receiverTypeOf(obj *sitter.Node, src []byte, selfAttrs, localHints map[string]string) string {
+	switch obj.Type() {
+	case "identifier":
+		return localHints[obj.Content(src)]
+	case "attribute":
+		inner := obj.ChildByFieldName("object")
+		attr := obj.ChildByFieldName("attribute")
+		if inner == nil || attr == nil || inner.Type() != "identifier" || inner.Content(src) != "self" {
+			return ""
+		}
+		return selfAttrs[attr.Content(src)]
 	}
 	return ""
+}
+
+// collectSelfAttrTypes scans an entire class body (every method, not just
+// __init__ — attributes are sometimes set elsewhere) for
+// `self.attr = ClassName(...)` assignments, returning attr name -> class
+// name. This is the Python analog of the field-type tracking the C#
+// analyzer does for `private readonly IFoo _foo;` — a receiver type known
+// to the analyzer is what lets the graph builder route a call precisely
+// instead of guessing among every same-named method in the repo.
+func collectSelfAttrTypes(classBody *sitter.Node, src []byte) map[string]string {
+	hints := map[string]string{}
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type() == "assignment" {
+			left := n.ChildByFieldName("left")
+			right := n.ChildByFieldName("right")
+			if left != nil && right != nil && left.Type() == "attribute" && right.Type() == "call" {
+				obj := left.ChildByFieldName("object")
+				attr := left.ChildByFieldName("attribute")
+				fn := right.ChildByFieldName("function")
+				if obj != nil && attr != nil && fn != nil && obj.Type() == "identifier" && obj.Content(src) == "self" && fn.Type() == "identifier" {
+					hints[attr.Content(src)] = fn.Content(src)
+				}
+			}
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(classBody)
+	return hints
+}
+
+// collectLocalVarTypes extends hints (in place) with a function body's
+// local `x = ClassName(...)` assignments — the Python analog of the C#
+// analyzer's `var x = new Foo(...)` inference. Only a direct constructor
+// call on the right-hand side counts; `x = some_call()` can't be
+// attributed a type from syntax alone and is left unhinted.
+func collectLocalVarTypes(body *sitter.Node, src []byte, hints map[string]string) {
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type() == "assignment" {
+			left := n.ChildByFieldName("left")
+			right := n.ChildByFieldName("right")
+			if left != nil && right != nil && left.Type() == "identifier" && right.Type() == "call" {
+				if fn := right.ChildByFieldName("function"); fn != nil && fn.Type() == "identifier" {
+					hints[left.Content(src)] = fn.Content(src)
+				}
+			}
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(body)
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/huandert/repolens/internal/parser"
 	"github.com/huandert/repolens/internal/parser/csharp"
 	"github.com/huandert/repolens/internal/parser/golang"
+	"github.com/huandert/repolens/internal/parser/python"
 )
 
 func TestBuilderResolvesCallsWithinFile(t *testing.T) {
@@ -247,5 +248,60 @@ class Middle {}
 			t.Errorf("expected edge order %v, got %v", want, gotOrder)
 			break
 		}
+	}
+}
+
+// TestBuilderResolvesPythonSelfAttrCallCorrectly is an end-to-end
+// regression test for a false edge reported against a real Flask app:
+// ChatService.chat_message showed a call to the unrelated
+// ChatController.create. ChatController happens to define the repo's
+// only method named "create", so the Python analyzer's old
+// no-receiver-type-ever call extraction fell through to the bare-name
+// heuristic's "exactly one candidate" shortcut and confidently — wrongly
+// — resolved there, even though chat_message's real self.chat_controller
+// is (in this test) a *different* class that also defines create(). The
+// receiver-type hint from `self.chat_controller = ...(...)` must route
+// the call to the correct implementer, not the merely name-unique one.
+func TestBuilderResolvesPythonSelfAttrCallCorrectly(t *testing.T) {
+	const controllerSrc = `class ChatController:
+    def create(self):
+        pass
+`
+	const serviceSrc = `class RealTarget:
+    def create(self):
+        pass
+
+class ChatService:
+    def __init__(self):
+        self.target = RealTarget()
+
+    def chat_message(self):
+        self.target.create()
+`
+	a := python.New()
+	controllerFA, err := a.Analyze("chat_controller.py", []byte(controllerSrc))
+	if err != nil {
+		t.Fatalf("analyze controller failed: %v", err)
+	}
+	serviceFA, err := a.Analyze("chat_service.py", []byte(serviceSrc))
+	if err != nil {
+		t.Fatalf("analyze service failed: %v", err)
+	}
+
+	g := NewBuilder().Build([]*parser.FileAnalysis{controllerFA, serviceFA})
+
+	chatMessageID := "symbol::chat_service.py::ChatService.chat_message"
+	wrongTargetID := "symbol::chat_controller.py::ChatController.create"
+	rightTargetID := "symbol::chat_service.py::RealTarget.create"
+
+	var gotTarget string
+	for _, e := range g.Out(chatMessageID, EdgeCalls) {
+		gotTarget = e.To
+	}
+	if gotTarget == wrongTargetID {
+		t.Errorf("expected chat_message's create() call to resolve to RealTarget.create, resolved to the unrelated ChatController.create instead")
+	}
+	if gotTarget != rightTargetID {
+		t.Errorf("expected chat_message to call %s, got %q", rightTargetID, gotTarget)
 	}
 }
