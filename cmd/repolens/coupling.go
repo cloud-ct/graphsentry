@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/huandert/repolens/internal/graph"
+	"github.com/cloud-ct/repolens/internal/graph"
 )
 
 func newCouplingCmd() *cobra.Command {

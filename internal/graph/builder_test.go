@@ -3,10 +3,10 @@ package graph
 import (
 	"testing"
 
-	"github.com/huandert/repolens/internal/parser"
-	"github.com/huandert/repolens/internal/parser/csharp"
-	"github.com/huandert/repolens/internal/parser/golang"
-	"github.com/huandert/repolens/internal/parser/python"
+	"github.com/cloud-ct/repolens/internal/parser"
+	"github.com/cloud-ct/repolens/internal/parser/csharp"
+	"github.com/cloud-ct/repolens/internal/parser/golang"
+	"github.com/cloud-ct/repolens/internal/parser/python"
 )
 
 func TestBuilderResolvesCallsWithinFile(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
 
-	"github.com/huandert/repolens/internal/parser"
+	"github.com/cloud-ct/repolens/internal/parser"
 )
 
 var routeMethodAttrs = map[string]string{

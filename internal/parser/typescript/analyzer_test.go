@@ -3,7 +3,7 @@ package typescript
 import (
 	"testing"
 
-	"github.com/huandert/repolens/internal/parser"
+	"github.com/cloud-ct/repolens/internal/parser"
 )
 
 const sample = `import { UserService } from "./user.service";

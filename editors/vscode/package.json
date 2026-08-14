@@ -3,18 +3,18 @@
   "displayName": "RepoLens",
   "description": "Local-first, multi-language code graph explorer. Ask architecture questions, see impact analysis and call-flow diagrams, right inside VS Code.",
   "version": "0.1.0",
-  "publisher": "coding-tironi",
+  "publisher": "cloudct",
   "license": "MIT",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/huandertironi/repolens.git",
+    "url": "https://github.com/cloud-ct/repolens.git",
     "directory": "editors/vscode"
   },
   "bugs": {
-    "url": "https://github.com/huandertironi/repolens/issues"
+    "url": "https://github.com/cloud-ct/repolens/issues"
   },
-  "homepage": "https://github.com/huandertironi/repolens#readme",
+  "homepage": "https://github.com/cloud-ct/repolens#readme",
   "engines": {
     "vscode": "^1.85.0"
   },

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/huandert/repolens/internal/parser"
+	"github.com/cloud-ct/repolens/internal/parser"
 )
 
 // Builder constructs a Graph from the per-file analyses produced by

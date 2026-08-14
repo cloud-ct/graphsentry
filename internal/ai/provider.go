@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/huandert/repolens/internal/graph"
+	"github.com/cloud-ct/repolens/internal/graph"
 )
 
 // AskRequest is the bounded context sent to the LLM: the user's question

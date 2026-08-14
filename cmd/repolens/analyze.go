@@ -6,13 +6,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/huandert/repolens/internal/graph"
-	"github.com/huandert/repolens/internal/ingest"
-	"github.com/huandert/repolens/internal/parser"
-	"github.com/huandert/repolens/internal/parser/csharp"
-	"github.com/huandert/repolens/internal/parser/golang"
-	"github.com/huandert/repolens/internal/parser/python"
-	"github.com/huandert/repolens/internal/parser/typescript"
+	"github.com/cloud-ct/repolens/internal/graph"
+	"github.com/cloud-ct/repolens/internal/ingest"
+	"github.com/cloud-ct/repolens/internal/parser"
+	"github.com/cloud-ct/repolens/internal/parser/csharp"
+	"github.com/cloud-ct/repolens/internal/parser/golang"
+	"github.com/cloud-ct/repolens/internal/parser/python"
+	"github.com/cloud-ct/repolens/internal/parser/typescript"
 )
 
 func newAnalyzeCmd() *cobra.Command {

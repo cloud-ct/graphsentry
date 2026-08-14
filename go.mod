@@ -1,4 +1,4 @@
-module github.com/huandert/repolens
+module github.com/cloud-ct/repolens
 
 go 1.25.0
 

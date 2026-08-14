@@ -1,7 +1,7 @@
 # RepoLens for VS Code
 
 Local-first, multi-language code graph explorer, right in the editor. This
-extension is a thin UI layer over the [RepoLens CLI](https://github.com/huandertironi/repolens)
+extension is a thin UI layer over the [RepoLens CLI](https://github.com/cloud-ct/repolens)
 — it never reimplements graph logic itself.
 
 ## What it does
@@ -17,7 +17,7 @@ All deterministic commands work with **zero LLM key configured**. Only "Ask" nee
 ## How the binary is managed
 
 On first use, the extension downloads the matching `repolens` CLI binary
-for your OS/architecture from the [RepoLens GitHub Releases](https://github.com/huandertironi/repolens/releases)
+for your OS/architecture from the [RepoLens GitHub Releases](https://github.com/cloud-ct/repolens/releases)
 and caches it in the extension's storage — no separate install step. If you'd
 rather manage your own build (e.g. via `go install`), set the
 `repolens.binaryPath` setting to point at it.
@@ -26,7 +26,7 @@ rather manage your own build (e.g. via `go install`), set the
 
 Your source code never leaves your machine except for the small subgraph
 sent to the LLM you configure yourself when using "Ask" — see the
-[main repo's privacy section](https://github.com/huandertironi/repolens#privacy)
+[main repo's privacy section](https://github.com/cloud-ct/repolens#privacy)
 for exactly what that includes.
 
 ## License

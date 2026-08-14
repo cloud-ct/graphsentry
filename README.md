@@ -1,6 +1,6 @@
 # RepoLens
 
-[![CI](https://github.com/huandertironi/repolens/actions/workflows/ci.yml/badge.svg)](https://github.com/huandertironi/repolens/actions/workflows/ci.yml)
+[![CI](https://github.com/cloud-ct/repolens/actions/workflows/ci.yml/badge.svg)](https://github.com/cloud-ct/repolens/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Reference](https://img.shields.io/badge/go-1.25%2B-00ADD8)](https://go.dev)
 
@@ -38,7 +38,7 @@ editor:
 Search for **RepoLens** in the VS Code Marketplace, or install directly:
 
 ```
-ext install coding-tironi.repolens
+ext install cloudct.repolens
 ```
 
 Open a project, wait for the sidebar's "Analyze workspace" step to finish,
@@ -99,13 +99,13 @@ The extension is powered by a Go CLI (`repolens`) that you can also use
 directly — handy for CI, scripting, or exploring a repo from a terminal.
 
 ```bash
-go install github.com/huandertironi/repolens/cmd/repolens@latest
+go install github.com/cloud-ct/repolens/cmd/repolens@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/huandertironi/repolens.git
+git clone https://github.com/cloud-ct/repolens.git
 cd repolens
 go build -o repolens ./cmd/repolens
 ```

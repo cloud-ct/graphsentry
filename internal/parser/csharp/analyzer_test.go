@@ -3,7 +3,7 @@ package csharp
 import (
 	"testing"
 
-	"github.com/huandert/repolens/internal/parser"
+	"github.com/cloud-ct/repolens/internal/parser"
 )
 
 const sample = `using Microsoft.AspNetCore.Mvc;

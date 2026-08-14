@@ -10,7 +10,7 @@ import * as path from "path";
 import * as https from "https";
 import { IncomingMessage } from "http";
 
-const REPO = "huandertironi/repolens";
+const REPO = "cloud-ct/repolens";
 // Pinned to the CLI release this extension version was built against.
 // Bump alongside editors/vscode/package.json's "version" when a new
 // repolens CLI release should be picked up.

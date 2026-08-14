@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/huandert/repolens/internal/ai/prompts"
+	"github.com/cloud-ct/repolens/internal/ai/prompts"
 )
 
 const defaultOpenAIModel = "gpt-4o-mini"

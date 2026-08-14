@@ -3,7 +3,7 @@ package python
 import (
 	"testing"
 
-	"github.com/huandert/repolens/internal/parser"
+	"github.com/cloud-ct/repolens/internal/parser"
 )
 
 const sample = `from flask import Blueprint
