@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { RepoLensClient, RepoLensError, displayName } from "./repolens";
+import { RepoLensClient, RepoLensError, displayName, FlowResult } from "./repolens";
 import { RepoLensCodeLensProvider } from "./codeLensProvider";
 import { configureProvider, clearProvider, hasProviderConfigured } from "./config";
 import { RepoLensSidebarProvider } from "./sidebarView";
@@ -194,10 +194,10 @@ async function runFlow(symbolArg?: string) {
   const result = await withErrorHandling(() => client.flow(repoPath, symbol));
   if (!result) return;
 
-  showFlowPanel(symbolLabel(symbol), result.ascii, result.mermaid);
+  showFlowPanel(repoPath, symbolLabel(symbol), result);
 }
 
-function showFlowPanel(symbol: string, ascii: string, mermaid: string) {
+function showFlowPanel(repoPath: string, symbol: string, result: FlowResult) {
   const mediaDir = vscode.Uri.joinPath(extensionUri, "media");
   const panel = vscode.window.createWebviewPanel(
     "repolensFlow",
@@ -207,7 +207,36 @@ function showFlowPanel(symbol: string, ascii: string, mermaid: string) {
   );
   const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "mermaid.min.js"));
   const panZoomUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaDir, "svg-pan-zoom.min.js"));
-  panel.webview.html = flowHtml(panel.webview, symbol, ascii, mermaid, mermaidUri, panZoomUri);
+  panel.webview.html = flowHtml(panel.webview, symbol, result, mermaidUri, panZoomUri);
+
+  panel.webview.onDidReceiveMessage(async (msg) => {
+    switch (msg.command) {
+      case "open":
+        await openNode(repoPath, { file: msg.file, start_line: msg.line });
+        return;
+      case "ask": {
+        if (!hasProviderConfigured(extContext)) {
+          panel.webview.postMessage({
+            command: "askError",
+            message: "No LLM provider configured yet. Run 'RepoLens: Configure LLM Provider' from the command palette, then ask again.",
+          });
+          return;
+        }
+        // Scope the question to this flow's root so the CLI's relevance
+        // matching (which works from the question text) is biased toward
+        // the subgraph already on screen, instead of the whole repo.
+        const contextualized = `Regarding the call flow starting at ${symbol}: ${msg.question}`;
+        try {
+          const answer = await client.ask(repoPath, contextualized);
+          panel.webview.postMessage({ command: "askResult", answer });
+        } catch (err) {
+          const message = err instanceof RepoLensError ? err.message : String(err);
+          panel.webview.postMessage({ command: "askError", message });
+        }
+        return;
+      }
+    }
+  });
 }
 
 /** A fresh per-render nonce, required to let the inline <script> block
@@ -234,8 +263,12 @@ function nonce(): string {
 // is the point at which svg-pan-zoom can safely attach to it — wiring
 // svg-pan-zoom to a still-rendering or not-yet-existing SVG is a race
 // startOnLoad doesn't give a clean hook to avoid.
-function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermaid: string, mermaidUri: vscode.Uri, panZoomUri: vscode.Uri): string {
-  const escapedAscii = ascii.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+//
+// The tree below the diagram is rendered client-side from result.paths
+// (not the CLI's plain-text ASCII string) specifically so each node can
+// carry its file/line and be Ctrl/Cmd+clickable — jumping to source the
+// same way the QuickPicks elsewhere in the extension do.
+function flowHtml(webview: vscode.Webview, symbol: string, result: FlowResult, mermaidUri: vscode.Uri, panZoomUri: vscode.Uri): string {
   const cspNonce = nonce();
   return `<!DOCTYPE html>
 <html>
@@ -258,13 +291,13 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
     flex-direction: column;
     height: 100%;
   }
-  pre { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; overflow-x: auto; }
+  pre, #tree { background: var(--vscode-textCodeBlock-background); padding: 1rem; border-radius: 6px; overflow: auto; }
   h2 { font-weight: 600; margin: 0.5rem 0; }
   #graphContainer {
     background: var(--vscode-textCodeBlock-background);
     border-radius: 6px;
     flex: 1 1 auto;
-    min-height: 55vh;
+    min-height: 45vh;
     width: 100%;
     box-sizing: border-box;
     /* svg-pan-zoom takes over wheel/drag on the SVG itself; the
@@ -273,8 +306,18 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
     position: relative;
   }
   #graphContainer svg { display: block; width: 100%; height: 100%; }
-  #asciiSection { flex: 0 0 auto; max-height: 25vh; overflow-y: auto; }
+  #treeSection { flex: 0 0 auto; max-height: 25vh; overflow-y: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em; }
   .hint { opacity: 0.65; font-size: 0.85em; margin: 0 0 0.5rem; }
+  .node-line { white-space: pre; }
+  .node-link { cursor: pointer; color: var(--vscode-textLink-foreground); }
+  .node-link:hover { text-decoration: underline; }
+  #askSection { flex: 0 0 auto; margin-top: 0.75rem; }
+  #askInput { width: 100%; box-sizing: border-box; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 0.5rem; font-family: inherit; resize: vertical; }
+  #askButton { margin-top: 0.4rem; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; padding: 0.4rem 0.9rem; cursor: pointer; }
+  #askButton:hover { background: var(--vscode-button-hoverBackground); }
+  #askButton:disabled { opacity: 0.6; cursor: default; }
+  #askAnswer { margin-top: 0.6rem; white-space: pre-wrap; }
+  #askAnswer:empty { display: none; }
 </style>
 <script nonce="${cspNonce}" src="${mermaidUri}"></script>
 <script nonce="${cspNonce}" src="${panZoomUri}"></script>
@@ -283,12 +326,26 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
   <h2>Call flow: ${symbol}</h2>
   <p class="hint">Scroll to zoom, drag to pan.</p>
   <div id="graphContainer"></div>
-  <div id="asciiSection">
-    <h2>ASCII</h2>
-    <pre>${escapedAscii}</pre>
+
+  <div id="treeSection">
+    <h2>Call tree</h2>
+    <p class="hint">Ctrl/Cmd+click a name to open it.</p>
+    <div id="tree"></div>
   </div>
+
+  <div id="askSection">
+    <h2>Ask about this flow</h2>
+    <textarea id="askInput" rows="2" placeholder="e.g. why does this call GetUserId three times?"></textarea>
+    <br>
+    <button id="askButton">Ask</button>
+    <div id="askAnswer"></div>
+  </div>
+
   <script nonce="${cspNonce}">
-    const graphDefinition = ${JSON.stringify(mermaid)};
+    const vscodeApi = acquireVsCodeApi();
+    const paths = ${JSON.stringify(result.paths)};
+    const graphDefinition = ${JSON.stringify(result.mermaid)};
+
     mermaid.initialize({ startOnLoad: false, theme: "dark" });
     mermaid.render("repolensFlowSvg", graphDefinition).then(({ svg }) => {
       const container = document.getElementById("graphContainer");
@@ -329,6 +386,98 @@ function flowHtml(webview: vscode.Webview, symbol: string, ascii: string, mermai
       };
       requestAnimationFrame(refit);
       window.addEventListener("resize", refit);
+    });
+
+    // Builds the same merged tree as the Go CLI's ASCII rendering
+    // (internal/diagram.treeFromPaths): paths sharing a prefix collapse
+    // into one branch, keyed by (edge kind, node id) so two different
+    // symbols that happen to share a bare name never merge into one.
+    function buildTree(paths) {
+      const root = { label: paths[0][0].node.qualified || paths[0][0].node.name, node: paths[0][0].node, children: [], childIndex: new Map() };
+      for (const path of paths) {
+        let cur = root;
+        for (let i = 1; i < path.length; i++) {
+          const step = path[i];
+          const key = step.via + "::" + step.node.id;
+          let next = cur.childIndex.get(key);
+          if (!next) {
+            const name = step.node.qualified || step.node.name;
+            const label = step.via && step.via !== "calls" ? "[" + step.via + "] " + name : name;
+            next = { label, node: step.node, children: [], childIndex: new Map() };
+            cur.childIndex.set(key, next);
+            cur.children.push(next);
+          }
+          cur = next;
+        }
+      }
+      return root;
+    }
+
+    function nodeSpan(n) {
+      const span = document.createElement("span");
+      span.className = "node-link";
+      span.textContent = n.label;
+      span.title = n.node.file ? n.node.file + ":" + n.node.start_line : "";
+      span.addEventListener("click", (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        if (!n.node.file) return;
+        vscodeApi.postMessage({ command: "open", file: n.node.file, line: n.node.start_line });
+      });
+      return span;
+    }
+
+    function renderTree(root) {
+      const container = document.getElementById("tree");
+      const rootLine = document.createElement("div");
+      rootLine.className = "node-line";
+      rootLine.appendChild(nodeSpan(root));
+      container.appendChild(rootLine);
+      renderChildren(root.children, "", container);
+    }
+
+    function renderChildren(children, prefix, container) {
+      children.forEach((c, i) => {
+        const last = i === children.length - 1;
+        const connector = last ? "└─► " : "├─► ";
+        const nextPrefix = prefix + (last ? "     " : "│    ");
+
+        const line = document.createElement("div");
+        line.className = "node-line";
+        line.appendChild(document.createTextNode(prefix + connector));
+        line.appendChild(nodeSpan(c));
+        container.appendChild(line);
+
+        renderChildren(c.children, nextPrefix, container);
+      });
+    }
+
+    if (paths.length > 0) {
+      renderTree(buildTree(paths));
+    } else {
+      document.getElementById("tree").textContent = "(no outgoing calls found)";
+    }
+
+    const askButton = document.getElementById("askButton");
+    const askInput = document.getElementById("askInput");
+    const askAnswer = document.getElementById("askAnswer");
+
+    askButton.addEventListener("click", () => {
+      const question = askInput.value.trim();
+      if (!question) return;
+      askButton.disabled = true;
+      askAnswer.textContent = "Thinking...";
+      vscodeApi.postMessage({ command: "ask", question });
+    });
+
+    window.addEventListener("message", (event) => {
+      const msg = event.data;
+      if (msg.command === "askResult") {
+        askAnswer.textContent = msg.answer;
+        askButton.disabled = false;
+      } else if (msg.command === "askError") {
+        askAnswer.textContent = "Error: " + msg.message;
+        askButton.disabled = false;
+      }
     });
   </script>
 </body>
