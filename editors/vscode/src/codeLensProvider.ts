@@ -1,4 +1,4 @@
-// Shows a CodeLens above every analyzed symbol ("3 dependents · 5
+// Shows a CodeLens above every analyzed symbol ("3 dependents" / "5
 // dependencies" / "Show flow"), so coupling and impact are visible without
 // opening the command palette. Backed entirely by `graphsentry coupling
 // --json` — no separate computation, just a cache keyed by file so
@@ -100,10 +100,23 @@ export class GraphSentryCodeLensProvider implements vscode.CodeLensProvider {
       // reads as glued-together at typical font sizes. Not worth fighting
       // with manual padding characters that'd look inconsistent across
       // themes/fonts — plain text is the more reliable choice here.
+      //
+      // Two separate CodeLens entries, not one combined "N dependents · M
+      // dependencies" label: they used to be a single lens whose title
+      // showed both numbers but whose command only ever opened the
+      // dependents (fan-in) list — the dependencies (fan-out) number had
+      // no way to be clicked through to its own list at all.
       lenses.push(
         new vscode.CodeLens(range, {
-          title: `${entry.fanIn} dependent${entry.fanIn === 1 ? "" : "s"} · ${entry.fanOut} dependenc${entry.fanOut === 1 ? "y" : "ies"}`,
+          title: `${entry.fanIn} dependent${entry.fanIn === 1 ? "" : "s"}`,
           command: "graphsentry.impact",
+          arguments: [entry.impactTargetId],
+        })
+      );
+      lenses.push(
+        new vscode.CodeLens(range, {
+          title: `${entry.fanOut} dependenc${entry.fanOut === 1 ? "y" : "ies"}`,
+          command: "graphsentry.dependencies",
           arguments: [entry.impactTargetId],
         })
       );
@@ -128,9 +141,10 @@ export class GraphSentryCodeLensProvider implements vscode.CodeLensProvider {
  * fan-out is always exactly 1 (the handler) — showing those numbers inline
  * would be structurally uninformative and, worse, inconsistent-looking
  * next to the handler's own real stats. So:
- *   - the "N dependents · M dependencies" stat uses the handler's real
- *     fan-in/fan-out (impact targets the handler's id, so the numbers
- *     shown and the numbers `graphsentry impact` reports agree), and
+ *   - the "N dependents" / "M dependencies" stats use the handler's real
+ *     fan-in/fan-out (both target the handler's id, so the numbers shown
+ *     and the numbers `graphsentry impact`/`graphsentry dependencies`
+ *     report agree), and
  *   - "Show flow" targets the endpoint when one exists, since starting
  *     the flow diagram at the named route ("GET /users") is the more
  *     useful, more recognizable entry point for exploration — it leads

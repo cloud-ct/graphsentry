@@ -22,6 +22,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.AddCommand(newAnalyzeCmd())
 	root.AddCommand(newImpactCmd())
+	root.AddCommand(newDependenciesCmd())
 	root.AddCommand(newCouplingCmd())
 	root.AddCommand(newFlowCmd())
 	root.AddCommand(newAskCmd())

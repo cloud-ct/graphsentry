@@ -127,6 +127,7 @@ graphsentry ask "How does user creation work?" # needs an LLM key — see above
 |---|---|---|
 | `graphsentry analyze <path>` | no | Parses a local folder and builds its code graph |
 | `graphsentry impact <symbol>` | no | Everything that transitively depends on a symbol |
+| `graphsentry dependencies <symbol>` | no | Everything a symbol itself transitively depends on |
 | `graphsentry coupling [--top N]` | no | Most coupled symbols by fan-in + fan-out |
 | `graphsentry flow <endpoint\|function>` | no | ASCII (and optional Mermaid) call-flow diagram |
 | `graphsentry ask "<question>"` | **yes** | Natural-language Q&A with narration + diagrams |

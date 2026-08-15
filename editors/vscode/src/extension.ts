@@ -36,6 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("graphsentry.analyze", () => runAnalyze()),
     vscode.commands.registerCommand("graphsentry.coupling", () => runCoupling()),
     vscode.commands.registerCommand("graphsentry.impact", (symbol?: string) => runImpact(symbol)),
+    vscode.commands.registerCommand("graphsentry.dependencies", (symbol?: string) => runDependencies(symbol)),
     // graphsentry.flow has no palette/menu/sidebar entry (see package.json)
     // — it's only ever invoked with an explicit symbol id, from a CodeLens
     // click. graphsentry.ask no longer exists as a standalone command at
@@ -215,6 +216,38 @@ async function runImpact(symbolArg?: string) {
 
   const picked = await vscode.window.showQuickPick(items, {
     title: `What depends on "${symbolLabel(symbol)}" (${result.impacted.length} impacted)`,
+  });
+  if (picked) {
+    await followUpOnNode(repoPath, picked.node);
+  }
+}
+
+/** Mirror image of runImpact: what the symbol at the cursor (or the
+ * CodeLens's "M dependencies" entry) itself relies on, transitively. */
+async function runDependencies(symbolArg?: string) {
+  const repoPath = await currentWorkspacePath();
+  if (!repoPath) return;
+
+  const symbol = symbolArg ?? (await symbolAtCursor());
+  if (!symbol) return;
+
+  const result = await withErrorHandling(() => client.dependencies(repoPath, symbol));
+  if (!result) return;
+
+  if (result.impacted.length === 0) {
+    vscode.window.showInformationMessage(`GraphSentry: "${symbolLabel(symbol)}" doesn't depend on anything else in the graph.`);
+    return;
+  }
+
+  const items = result.impacted.map((i) => ({
+    label: `${"  ".repeat(i.distance - 1)}↳ ${displayName(i.node)}`,
+    description: `depth ${i.distance} · via ${i.via} · ${i.node.kind}`,
+    detail: i.node.file,
+    node: i.node,
+  }));
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title: `What "${symbolLabel(symbol)}" depends on (${result.impacted.length} dependencies)`,
   });
   if (picked) {
     await followUpOnNode(repoPath, picked.node);

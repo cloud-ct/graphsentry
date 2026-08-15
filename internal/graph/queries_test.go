@@ -52,6 +52,31 @@ func TestImpactMaxDepth(t *testing.T) {
 	}
 }
 
+func TestDependencies(t *testing.T) {
+	g := buildSample()
+	res := g.Dependencies("service::UserService", 0)
+	if len(res.Impacted) != 3 {
+		t.Fatalf("expected 3 dependencies, got %d: %+v", len(res.Impacted), res.Impacted)
+	}
+	ids := map[string]bool{}
+	for _, n := range res.Impacted {
+		ids[n.Node.ID] = true
+	}
+	for _, want := range []string{"repo::UserRepository", "identity::IdentityService", "db::PostgreSQL"} {
+		if !ids[want] {
+			t.Errorf("expected %s to be a dependency", want)
+		}
+	}
+}
+
+func TestDependenciesMaxDepth(t *testing.T) {
+	g := buildSample()
+	res := g.Dependencies("service::UserService", 1)
+	if len(res.Impacted) != 2 {
+		t.Fatalf("expected 2 direct dependencies with maxDepth=1, got %d", len(res.Impacted))
+	}
+}
+
 func TestFanInFanOut(t *testing.T) {
 	g := buildSample()
 	if fo := g.FanOut("service::UserService"); fo != 2 {

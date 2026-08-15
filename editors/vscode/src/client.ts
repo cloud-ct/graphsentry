@@ -78,6 +78,14 @@ export class GraphSentryClient {
     return JSON.parse(out) as ImpactResult;
   }
 
+  /** Mirror image of impact(): what the symbol itself depends on, not what
+   * depends on it. Separate CLI command (`dependencies`) and CodeLens
+   * entry from impact's — see codeLensProvider.ts's two-lens split. */
+  async dependencies(repoPath: string, symbol: string): Promise<ImpactResult> {
+    const out = await this.run(["dependencies", symbol, "--repo", repoPath, "--json"]);
+    return JSON.parse(out) as ImpactResult;
+  }
+
   async flow(repoPath: string, symbol: string, depth = 5): Promise<FlowResult> {
     const out = await this.run(["flow", symbol, "--repo", repoPath, "--depth", String(depth), "--json"]);
     return JSON.parse(out) as FlowResult;
@@ -116,7 +124,7 @@ export class GraphSentryClient {
 
   private async run(args: string[]): Promise<string> {
     const bin = await getBinaryPath(this.context);
-    // Provider env vars (REPOLENS_PROVIDER + the matching key/host) come
+    // Provider env vars (GRAPHSENTRY_PROVIDER + the matching key/host) come
     // from the extension's own config (SecretStorage-backed — see
     // config.ts), not from the user's shell environment, so "Ask" works
     // the same whether or not graphsentry was ever configured outside VS

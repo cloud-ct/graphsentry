@@ -2,7 +2,7 @@
   "name": "graphsentry",
   "displayName": "GraphSentry",
   "description": "Local-first, multi-language code graph explorer. Ask architecture questions, see impact analysis and call-flow diagrams, right inside VS Code.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "cloudct",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -51,6 +51,10 @@
         "title": "GraphSentry: Impact Analysis for Symbol at Cursor"
       },
       {
+        "command": "graphsentry.dependencies",
+        "title": "GraphSentry: Dependencies of Symbol at Cursor"
+      },
+      {
         "command": "graphsentry.configureProvider",
         "title": "GraphSentry: Configure LLM Provider (API Key for Ask)"
       },
@@ -65,12 +69,18 @@
           "command": "graphsentry.impact",
           "group": "graphsentry",
           "when": "editorHasSelection == false"
+        },
+        {
+          "command": "graphsentry.dependencies",
+          "group": "graphsentry",
+          "when": "editorHasSelection == false"
         }
       ],
       "commandPalette": [
         { "command": "graphsentry.analyze" },
         { "command": "graphsentry.coupling" },
         { "command": "graphsentry.impact" },
+        { "command": "graphsentry.dependencies" },
         { "command": "graphsentry.configureProvider" },
         { "command": "graphsentry.clearProvider" },
         { "command": "graphsentry.flow", "when": "false" },

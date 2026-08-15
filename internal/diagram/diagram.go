@@ -144,11 +144,21 @@ func sanitizeID(id string) string {
 // ASCIIImpact renders an impact analysis result as a flat, distance-grouped
 // list.
 func ASCIIImpact(res *graph.ImpactResult) string {
+	return asciiReachable(res, "Nothing depends on this — safe to change in isolation (no known dependents in the graph).", "Impact analysis for %s:\n\n")
+}
+
+// ASCIIDependencies renders a dependency analysis result (the mirror image
+// of ASCIIImpact: what the symbol itself relies on) the same way.
+func ASCIIDependencies(res *graph.ImpactResult) string {
+	return asciiReachable(res, "This doesn't depend on anything else in the graph (no known dependencies).", "Dependencies of %s:\n\n")
+}
+
+func asciiReachable(res *graph.ImpactResult, emptyMsg, header string) string {
 	if len(res.Impacted) == 0 {
-		return "Nothing depends on this — safe to change in isolation (no known dependents in the graph)."
+		return emptyMsg
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Impact analysis for %s:\n\n", res.Root)
+	fmt.Fprintf(&b, header, res.Root)
 	curDist := -1
 	for _, imp := range res.Impacted {
 		if imp.Distance != curDist {

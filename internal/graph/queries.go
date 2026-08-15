@@ -29,6 +29,30 @@ type ImpactedNode struct {
 // meaningless noise, since changing a method doesn't "break" the file that
 // contains it the way changing it can break an actual caller.
 func (g *Graph) Impact(id string, maxDepth int) *ImpactResult {
+	res := &ImpactResult{Root: id}
+	res.Impacted = bfsReachable(g, id, maxDepth, g.In)
+	return res
+}
+
+// Dependencies performs the mirror-image traversal of Impact: breadth-first
+// over outgoing edges, up to maxDepth hops (0 = unlimited). It answers
+// "what does this symbol itself rely on?" — the transitive expansion of the
+// same fan-out CodeLens.title shows as a single number. Kept as a separate
+// entry point (rather than an "incoming bool" parameter on Impact) since
+// callers and the CLI/JSON shape read more clearly as two named things:
+// what depends on this vs. what this depends on.
+func (g *Graph) Dependencies(id string, maxDepth int) *ImpactResult {
+	res := &ImpactResult{Root: id}
+	res.Impacted = bfsReachable(g, id, maxDepth, g.Out)
+	return res
+}
+
+// bfsReachable walks edges via next (g.In for dependents, g.Out for
+// dependencies) up to maxDepth hops, returning reachable nodes sorted by
+// distance then id. "Defines" edges are excluded (see Impact's doc comment)
+// regardless of direction, since a file "depending on" the symbols it
+// defines is exactly as meaningless as the reverse.
+func bfsReachable(g *Graph, id string, maxDepth int, next func(id string, kinds ...EdgeKind) []*Edge) []*ImpactedNode {
 	visited := map[string]int{id: 0}
 	via := map[string]EdgeKind{}
 	queue := []string{id}
@@ -41,36 +65,47 @@ func (g *Graph) Impact(id string, maxDepth int) *ImpactResult {
 		if maxDepth > 0 && d >= maxDepth {
 			continue
 		}
-		for _, e := range excludeDefines(g.In(cur)) {
-			if _, seen := visited[e.From]; seen {
+		for _, e := range excludeDefines(next(cur)) {
+			neighbor := edgeNeighbor(e, cur)
+			if _, seen := visited[neighbor]; seen {
 				continue
 			}
-			visited[e.From] = d + 1
-			via[e.From] = e.Kind
-			order = append(order, e.From)
-			queue = append(queue, e.From)
+			visited[neighbor] = d + 1
+			via[neighbor] = e.Kind
+			order = append(order, neighbor)
+			queue = append(queue, neighbor)
 		}
 	}
 
-	res := &ImpactResult{Root: id}
+	var out []*ImpactedNode
 	for _, nid := range order {
 		n, ok := g.Nodes[nid]
 		if !ok {
 			n = &Node{ID: nid, Name: nid} // dangling reference, still report it
 		}
-		res.Impacted = append(res.Impacted, &ImpactedNode{
+		out = append(out, &ImpactedNode{
 			Node:     n,
 			Distance: visited[nid],
 			Via:      via[nid],
 		})
 	}
-	sort.Slice(res.Impacted, func(i, j int) bool {
-		if res.Impacted[i].Distance != res.Impacted[j].Distance {
-			return res.Impacted[i].Distance < res.Impacted[j].Distance
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Distance != out[j].Distance {
+			return out[i].Distance < out[j].Distance
 		}
-		return res.Impacted[i].Node.ID < res.Impacted[j].Node.ID
+		return out[i].Node.ID < out[j].Node.ID
 	})
-	return res
+	return out
+}
+
+// edgeNeighbor returns whichever end of e isn't cur — e.From when walking
+// incoming edges (next == g.In, so e.To == cur), e.To when walking outgoing
+// ones (next == g.Out, so e.From == cur).
+func edgeNeighbor(e *Edge, cur string) string {
+	if e.To == cur {
+		return e.From
+	}
+	return e.To
 }
 
 // CouplingScore summarizes how coupled a node is to the rest of the graph.
