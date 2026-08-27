@@ -14,7 +14,7 @@ const REPO = "cloud-ct/graphsentry";
 // Pinned to the CLI release this extension version was built against.
 // Bump alongside editors/vscode/package.json's "version" when a new
 // graphsentry CLI release should be picked up.
-const CLI_RELEASE_TAG = "v0.3.0";
+const CLI_RELEASE_TAG = "v0.4.0";
 
 interface PlatformTarget {
   os: "linux" | "darwin" | "windows";

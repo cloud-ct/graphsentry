@@ -25,6 +25,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newDependenciesCmd())
 	root.AddCommand(newCouplingCmd())
 	root.AddCommand(newFlowCmd())
+	root.AddCommand(newSecurityCmd())
 	root.AddCommand(newAskCmd())
 	return root
 }

@@ -1,4 +1,6 @@
 /repolens
+/graphsentry
+/graphsentry-dev
 /dist/
 *.db
 *.sqlite
