@@ -3,6 +3,13 @@
 All notable changes to the GraphSentry extension are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1]
+
+### Changed
+
+- Republish with a populated Changelog tab (this file was added after
+  0.4.0 had already been published). No functional changes from 0.4.0.
+
 ## [0.4.0]
 
 ### Added
