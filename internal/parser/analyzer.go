@@ -65,6 +65,18 @@ type CreateRef struct {
 	Line     int
 }
 
+// AttrRef is one attribute/decorator/annotation found attached to a symbol
+// — a C# `[Authorize(Roles = "admin")]`, a Python `@login_required`, and so
+// on. Analyzers should report these verbatim and stay agnostic about what
+// any of them mean: whether a given attribute counts as an auth guard (or
+// anything else) is decided later, by internal/security.Rule implementations
+// working off the built graph — see graph.Attr for the full rationale.
+type AttrRef struct {
+	Name string            // e.g. "Authorize", "AllowAnonymous", "ApiKeyAuthorize"
+	Args map[string]string // named args, e.g. {"Roles": "admin"}; a bare positional arg goes under key ""
+	Line int
+}
+
 // Symbol is a code entity extracted from a single file: a function, method,
 // type, class, interface, or an HTTP endpoint recognized by convention
 // (e.g. an Express route handler or an ASP.NET controller action).
@@ -79,6 +91,11 @@ type Symbol struct {
 	Calls      []CallRef   // symbols this symbol invokes (resolved later by the builder)
 	Creates    []CreateRef // types this symbol instantiates via `new` (kept separate from Calls: constructing a value is a different relationship than invoking a method on one)
 	Implements []string    // interface/base names this type implements or extends
+	Attrs      []AttrRef   // attributes/decorators found on this symbol (see AttrRef)
+	// WrapsType is set only for a class-like symbol that wraps another type
+	// via a base-constructor call, the way C#'s `TypeFilterAttribute`
+	// subclasses do — see graph.Node.WrapsType for the full rationale.
+	WrapsType string
 }
 
 // Import is a dependency declared by a file on another file/module.

@@ -7,6 +7,8 @@ import (
 
 	"github.com/cloud-ct/graphsentry/internal/diagram"
 	"github.com/cloud-ct/graphsentry/internal/graph"
+	"github.com/cloud-ct/graphsentry/internal/security"
+	"github.com/cloud-ct/graphsentry/internal/security/rules"
 )
 
 // flowJSON is the --json shape for `flow`: the raw paths (for callers that
@@ -51,6 +53,13 @@ func newFlowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Adds a guarded_by edge from any endpoint on the graph to
+			// whatever guard(s) internal/security found for it, so a flow
+			// diagram starting at an endpoint shows what protects it (or
+			// doesn't) the same way it already shows what the endpoint
+			// calls. No-op for a plain function/method id — Analyze only
+			// ever produces findings for endpoint-kind nodes.
+			security.AnnotateGuards(g, rules.Default()...)
 			paths := g.FlowPaths(id, depth)
 			if asJSON {
 				return printJSON(flowJSON{

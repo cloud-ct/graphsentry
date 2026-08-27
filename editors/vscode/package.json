@@ -2,7 +2,7 @@
   "name": "graphsentry",
   "displayName": "GraphSentry",
   "description": "Local-first, multi-language code graph explorer. Ask architecture questions, see impact analysis and call-flow diagrams, right inside VS Code.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "cloudct",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -55,6 +55,10 @@
         "title": "GraphSentry: Dependencies of Symbol at Cursor"
       },
       {
+        "command": "graphsentry.securityEndpoints",
+        "title": "GraphSentry: Security — Endpoints Without an Auth Guard"
+      },
+      {
         "command": "graphsentry.configureProvider",
         "title": "GraphSentry: Configure LLM Provider (API Key for Ask)"
       },
@@ -81,10 +85,12 @@
         { "command": "graphsentry.coupling" },
         { "command": "graphsentry.impact" },
         { "command": "graphsentry.dependencies" },
+        { "command": "graphsentry.securityEndpoints" },
         { "command": "graphsentry.configureProvider" },
         { "command": "graphsentry.clearProvider" },
         { "command": "graphsentry.flow", "when": "false" },
-        { "command": "graphsentry.ask", "when": "false" }
+        { "command": "graphsentry.ask", "when": "false" },
+        { "command": "graphsentry.securityEndpointInfo", "when": "false" }
       ]
     },
     "viewsContainers": {

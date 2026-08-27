@@ -14,6 +14,13 @@ const (
 	NodeClass     NodeKind = "class"
 	NodeInterface NodeKind = "interface"
 	NodeEndpoint  NodeKind = "endpoint"
+	// NodeGuard identifies a synthetic node representing one distinct auth
+	// guard protecting an endpoint — e.g. "Authorize(Roles=admin)" or
+	// "ApiKeyAuthorize(N8N)". It's never produced by a LanguageAnalyzer or
+	// persisted by Store: internal/security.Rule implementations build
+	// these in memory, straight off Node.Attrs/EdgeImplements, every time
+	// a query runs — see EdgeGuardedBy.
+	NodeGuard NodeKind = "guard"
 )
 
 // EdgeKind identifies the kind of relationship a graph edge represents.
@@ -27,7 +34,34 @@ const (
 	EdgeDefines      EdgeKind = "defines" // file defines symbol
 	EdgeExtends      EdgeKind = "extends"
 	EdgeReferences   EdgeKind = "references"
+	// EdgeGuardedBy connects an endpoint to a NodeGuard that protects it —
+	// "endpoint --guardedBy--> guard". Like NodeGuard, this is never added
+	// to a Graph by the Builder or persisted by Store — the Builder only
+	// records raw source structure (Node.Attrs); deciding which attribute
+	// counts as a guard, and materializing that decision as this edge kind,
+	// is entirely internal/security's job, computed fresh from the loaded
+	// graph on every query. See internal/security.Rule.
+	EdgeGuardedBy EdgeKind = "guarded_by"
 )
+
+// Attr is one attribute/decorator/annotation attached to a node exactly as
+// found in source — a C# `[Authorize(Roles = "admin")]`, a Python
+// `@login_required`, a future TS `@UseGuards(...)`, etc. It mirrors
+// parser.AttrRef (kept as its own type here, the same way NodeKind mirrors
+// parser.SymbolKind, to avoid a graph->parser type coupling); the Builder
+// copies it over verbatim, with zero opinion about what any of it means.
+//
+// This is the one deliberate seam between "what the parser saw" and "what
+// counts as an auth guard": a LanguageAnalyzer's only job is to report Attrs
+// truthfully; deciding whether a given Attr is a guard is entirely up to
+// internal/security.Rule implementations, which read Attrs back off the
+// built graph. Adding a new kind of guard (a new framework, a new team
+// convention) never means touching Node, the Builder, or an existing Rule.
+type Attr struct {
+	Name string            `json:"name"`           // e.g. "Authorize", "AllowAnonymous", "login_required"
+	Args map[string]string `json:"args,omitempty"` // named args (Roles=, Policy=, ...); positional args under key ""
+	Line int               `json:"line"`
+}
 
 // Node is a single entity in the code graph.
 type Node struct {
@@ -47,6 +81,30 @@ type Node struct {
 	EndLine    int    `json:"end_line"`
 	Signature  string `json:"signature,omitempty"`
 	DocComment string `json:"doc_comment,omitempty"`
+	// Attrs are this node's raw attributes/decorators, as reported by the
+	// LanguageAnalyzer. See the Attr doc comment for why this exists.
+	Attrs []Attr `json:"attrs,omitempty"`
+	// Implements is the raw list of interface/base names this node declared
+	// itself as implementing/extending, exactly as written in source —
+	// copied verbatim from parser.Symbol.Implements, same as Attrs. This is
+	// deliberately *not* the same thing as EdgeImplements: EdgeImplements
+	// only exists once the Builder has resolved a name to another node in
+	// this repo, so a base/interface that lives outside it (a framework
+	// type like ASP.NET's IAuthorizationFilter, never itself a node) has no
+	// edge — but a security.Rule may still need to know the name was
+	// declared, which this field preserves regardless of whether it
+	// resolved to anything.
+	Implements []string `json:"implements,omitempty"`
+	// WrapsType is set only for a class-like node that wraps another type
+	// the way C#'s `TypeFilterAttribute` subclasses do (`class
+	// ApiKeyAuthorizeAttribute : TypeFilterAttribute` constructed with
+	// `base(typeof(ApiKeyAuthorizeFilter))`) — the wrapped type's simple
+	// name, i.e. "ApiKeyAuthorizeFilter". This is what lets an
+	// auth-detection Rule recognize a *custom* guard attribute generically,
+	// by checking whether the type it wraps implements IAuthorizationFilter
+	// (via the ordinary EdgeImplements edges), instead of hardcoding the
+	// attribute's name.
+	WrapsType string `json:"wraps_type,omitempty"`
 }
 
 // Edge is a directed relationship between two nodes.

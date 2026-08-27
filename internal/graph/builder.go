@@ -66,6 +66,7 @@ func (b *Builder) AddFile(fa *parser.FileAnalysis) {
 			ID: id, Kind: kind, Name: sym.Name, Qualified: sym.Qualified, File: fa.Path, Language: fa.Language,
 			StartLine: sym.StartLine, EndLine: sym.EndLine,
 			Signature: sym.Signature, DocComment: sym.DocComment,
+			Attrs: attrsOf(sym.Attrs), WrapsType: sym.WrapsType, Implements: sym.Implements,
 		})
 		b.g.AddEdge(fileID, id, EdgeDefines)
 		b.nameIndex[sym.Name] = append(b.nameIndex[sym.Name], id)
@@ -130,6 +131,20 @@ func (b *Builder) Build(analyses []*parser.FileAnalysis) *Graph {
 	}
 
 	return b.g
+}
+
+// attrsOf converts a symbol's parser.AttrRef list to the graph's own Attr
+// type — a plain, no-opinion type conversion (see graph.Attr for why the
+// two types are kept separate rather than sharing one).
+func attrsOf(refs []parser.AttrRef) []Attr {
+	if len(refs) == 0 {
+		return nil
+	}
+	attrs := make([]Attr, len(refs))
+	for i, r := range refs {
+		attrs[i] = Attr{Name: r.Name, Args: r.Args, Line: r.Line}
+	}
+	return attrs
 }
 
 // sourceAction is one call or instantiation, tagged with its source line so

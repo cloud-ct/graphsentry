@@ -85,11 +85,21 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 			if base := findChildOfType(n, "base_list"); base != nil {
 				implements = extractIdentifiers(base, src)
 			}
+			classAttrs := attrRefs(n, src)
 			fa.Symbols = append(fa.Symbols, parser.Symbol{
 				Kind: kind, Name: name, Qualified: name,
 				StartLine: start, EndLine: end,
 				Signature:  signatureLine(text(n)),
 				Implements: implements,
+				Attrs:      classAttrs,
+				// WrapsType recognizes the `class XAttribute : TypeFilterAttribute`
+				// + `base(typeof(YFilter))` pattern ASP.NET uses for custom
+				// filter-backed attributes (see wrapsTypeOf) — it's what lets
+				// internal/security recognize a guard attribute like
+				// [ApiKeyAuthorize(...)] generically, by checking whether
+				// YFilter implements IAuthorizationFilter, instead of
+				// hardcoding the attribute's name.
+				WrapsType: wrapsTypeOf(n, src),
 			})
 
 			route := attributeRoute(n, src, "Route")
@@ -105,7 +115,7 @@ func (a *Analyzer) Analyze(path string, content []byte) (*parser.FileAnalysis, e
 			}
 			if body != nil {
 				for i := 0; i < int(body.ChildCount()); i++ {
-					walkClassMember(body.Child(i), name, route, fieldTypes, fa, src, line, text)
+					walkClassMember(body.Child(i), name, route, classAttrs, fieldTypes, fa, src, line, text)
 				}
 			}
 			return // members handled by walkClassMember, don't double-walk
@@ -262,7 +272,12 @@ func collectLocalFunctionNames(body *sitter.Node, src []byte) map[string]bool {
 
 // walkClassMember handles method_declaration nodes inside a class body,
 // qualifying them as Class.Method and detecting HTTP endpoint attributes.
-func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes map[string]string, fa *parser.FileAnalysis, src []byte,
+// classAttrs are the attributes found on the enclosing class/controller
+// (e.g. a class-level [Authorize]) — ASP.NET applies those to every action
+// in the class unless overridden, so an endpoint's effective Attrs is
+// classAttrs + the method's own, merged here once rather than left for
+// every future security.Rule to re-derive the same inheritance itself.
+func walkClassMember(n *sitter.Node, className, classRoute string, classAttrs []parser.AttrRef, fieldTypes map[string]string, fa *parser.FileAnalysis, src []byte,
 	line func(*sitter.Node) (int, int), text func(*sitter.Node) string) {
 	if n == nil {
 		return
@@ -290,6 +305,7 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes ma
 			localFuncs = collectLocalFunctionNames(body, src)
 		}
 		calls, creates := extractCallsAndCreates(n, src, hints, className, localFuncs)
+		methodAttrs := attrRefs(n, src)
 
 		fa.Symbols = append(fa.Symbols, parser.Symbol{
 			Kind: parser.KindMethod, Name: mName, Qualified: className + "." + mName,
@@ -297,6 +313,7 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes ma
 			Signature: signatureLine(text(n)),
 			Calls:     calls,
 			Creates:   creates,
+			Attrs:     methodAttrs,
 		})
 
 		if verb, route := endpointFromAttributes(n, src); verb != "" {
@@ -311,6 +328,10 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes ma
 				StartLine: start, EndLine: end,
 				Signature: signatureLine(text(n)),
 				Calls:     []parser.CallRef{{Name: className + "." + mName, Line: start}},
+				// The endpoint's effective attrs are the class's plus its
+				// own — see the classAttrs doc comment on walkClassMember for
+				// why that merge happens here instead of in a security.Rule.
+				Attrs: append(append([]parser.AttrRef{}, classAttrs...), methodAttrs...),
 			})
 		}
 	case "class_declaration", "interface_declaration", "struct_declaration":
@@ -318,7 +339,7 @@ func walkClassMember(n *sitter.Node, className, classRoute string, fieldTypes ma
 		// and not worth the complexity of a separate field-type scope.
 	default:
 		for i := 0; i < int(n.ChildCount()); i++ {
-			walkClassMember(n.Child(i), className, classRoute, fieldTypes, fa, src, line, text)
+			walkClassMember(n.Child(i), className, classRoute, classAttrs, fieldTypes, fa, src, line, text)
 		}
 	}
 }
@@ -382,6 +403,101 @@ func attributeLists(n *sitter.Node) []*sitter.Node {
 		}
 	}
 	return lists
+}
+
+// attrRefs collects every attribute on n's leading attribute_list children
+// into parser.AttrRef, full args included — the generic evidence consumed
+// later by internal/security.Rule implementations (see AttrRef's doc
+// comment). Unlike parseAttribute (below), which only cares about the one
+// positional string argument [Route]/[Http*] need, this keeps every
+// argument, named or not, since a Rule might need any of them (e.g.
+// [Authorize(Roles = "admin")]'s Roles, or [AllowAnonymous]'s absence of
+// any).
+func attrRefs(n *sitter.Node, src []byte) []parser.AttrRef {
+	var refs []parser.AttrRef
+	for _, al := range attributeLists(n) {
+		attrNode := findChildOfType(al, "attribute")
+		if attrNode == nil {
+			continue
+		}
+		nameNode := attrNode.ChildByFieldName("name")
+		if nameNode == nil {
+			continue
+		}
+		ln := int(attrNode.StartPoint().Row) + 1
+		ref := parser.AttrRef{Name: nameNode.Content(src), Line: ln}
+		if argsNode := findChildOfType(attrNode, "attribute_argument_list"); argsNode != nil {
+			ref.Args = attributeArgs(argsNode, src)
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+// attributeArgs extracts an attribute_argument_list's arguments as a name ->
+// value map. Each attribute_argument is either `name = value` (a named arg,
+// parsed as an assignment_expression — C# attributes use `=`, not the `:`
+// regular named arguments use) or a bare value (a positional arg, stored
+// under key ""). Only string-literal values are captured; other value
+// expressions (rare in practice for auth-related attributes) are skipped
+// rather than guessed at.
+func attributeArgs(argsNode *sitter.Node, src []byte) map[string]string {
+	args := map[string]string{}
+	for _, arg := range findChildrenOfType(argsNode, "attribute_argument") {
+		valueNode := arg.Child(0)
+		key := ""
+		if assign := findChildOfType(arg, "assignment_expression"); assign != nil {
+			if left := assign.ChildByFieldName("left"); left != nil {
+				key = left.Content(src)
+			}
+			if right := assign.ChildByFieldName("right"); right != nil {
+				valueNode = right
+			}
+		}
+		if valueNode == nil {
+			continue
+		}
+		if strLit := findDescendantOfType(valueNode, "string_literal"); strLit != nil {
+			if content := findChildOfType(strLit, "string_literal_content"); content != nil {
+				args[key] = content.Content(src)
+				continue
+			}
+		}
+	}
+	return args
+}
+
+// wrapsTypeOf recognizes ASP.NET's `class XAttribute : TypeFilterAttribute`
+// pattern: a custom attribute that forwards to a filter type via
+// `base(typeof(YFilter))` in its constructor. It returns "YFilter", or ""
+// if n isn't such a class (most classes aren't). This is pure structural
+// extraction — it says nothing about whether YFilter is actually an auth
+// filter; that's for a security.Rule to decide once EdgeImplements exists.
+func wrapsTypeOf(classDecl *sitter.Node, src []byte) string {
+	body := classDecl.ChildByFieldName("body")
+	if body == nil {
+		return ""
+	}
+	for _, ctor := range findChildrenOfType(body, "constructor_declaration") {
+		init := findChildOfType(ctor, "constructor_initializer")
+		if init == nil || findChildOfType(init, "base") == nil {
+			continue
+		}
+		argList := findChildOfType(init, "argument_list")
+		if argList == nil {
+			continue
+		}
+		for _, arg := range findChildrenOfType(argList, "argument") {
+			typeofExpr := findChildOfType(arg, "typeof_expression")
+			if typeofExpr == nil {
+				continue
+			}
+			if id := findDescendantOfType(typeofExpr, "identifier"); id != nil {
+				return id.Content(src)
+			}
+		}
+	}
+	return ""
 }
 
 // parseAttribute extracts an attribute's name and its first string-literal

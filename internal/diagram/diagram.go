@@ -5,6 +5,7 @@ package diagram
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/cloud-ct/graphsentry/internal/graph"
@@ -120,7 +121,7 @@ func MermaidFlow(paths [][]*graph.PathStep) string {
 			id := nodeID(step.Node)
 			if !seen[id] {
 				seen[id] = true
-				fmt.Fprintf(&b, "    %s[%q]\n", id, displayName(step.Node))
+				fmt.Fprintf(&b, "    %s[\"%s\"]\n", id, mermaidEscapeLabel(displayName(step.Node)))
 			}
 			if i == 0 {
 				continue
@@ -136,9 +137,40 @@ func MermaidFlow(paths [][]*graph.PathStep) string {
 	return b.String()
 }
 
+// mermaidEscapeLabel escapes characters Mermaid's flowchart grammar treats
+// specially even inside a double-quoted node label: "{"/"}" (its own
+// decision-node syntax — the bug this fixes: an ASP.NET endpoint name like
+// "GET Users/{id}" broke the whole diagram), '"' (would terminate the
+// quoted label early — Go's %q backslash-escaping doesn't help here since
+// Mermaid doesn't treat "\"" as an escaped quote at all), and "#" (starts
+// Mermaid's own entity-code escape syntax, which is exactly the mechanism
+// used below, so a literal "#" needs escaping too or it'd be misread as
+// starting one). Uses Mermaid's documented HTML entity codes rather than
+// backslashes: https://mermaid.js.org/syntax/flowchart.html#entity-codes-to-escape-characters
+func mermaidEscapeLabel(s string) string {
+	r := strings.NewReplacer(
+		"#", "#35;",
+		"\"", "#quot;",
+		"{", "#123;",
+		"}", "#125;",
+	)
+	return r.Replace(s)
+}
+
+// sanitizeID turns a graph node ID into a valid, unquoted Mermaid
+// identifier. Unlike a node's *label* (see mermaidEscapeLabel), an ID isn't
+// wrapped in quotes at all in flowchart syntax, so any character outside
+// [A-Za-z0-9_] is unsafe here, not just Mermaid's own special ones — a
+// route parameter's "{"/"}" (ASP.NET), "<"/">" (Flask/FastAPI's
+// "<int:id>"), or anything else no analyzer happens to produce yet would
+// otherwise all reach this unescaped. Blanket-replacing everything but the
+// known-safe set, rather than listing specific characters to swap out,
+// means a future route syntax with its own new punctuation can't reopen
+// this the way the "{"/"}" case originally did.
+var idUnsafe = regexp.MustCompile(`[^A-Za-z0-9_]`)
+
 func sanitizeID(id string) string {
-	r := strings.NewReplacer(":", "_", ".", "_", "/", "_", " ", "_", "-", "_")
-	return "n_" + r.Replace(id)
+	return "n_" + idUnsafe.ReplaceAllString(id, "_")
 }
 
 // ASCIIImpact renders an impact analysis result as a flat, distance-grouped

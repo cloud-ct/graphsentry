@@ -169,3 +169,109 @@ func TestDeclarationLineSkipsAttributes(t *testing.T) {
 		t.Errorf("expected StartLine 6 (the method signature, past the 3 leading attributes), got %d", method.StartLine)
 	}
 }
+
+// TestEndpointAttrsAndWrapsType covers the three real-world ASP.NET auth
+// patterns internal/security.Rule implementations need to recognize:
+// class-level [Authorize] inherited by every action, [AllowAnonymous]
+// overriding it on one action, and a custom TypeFilterAttribute-backed
+// attribute wrapping a filter class — modeled on bankme-ai-main's
+// ApiKeyAuthorizeAttribute/ApiKeyAuthorizeFilter pair.
+func TestEndpointAttrsAndWrapsType(t *testing.T) {
+	// Each action gets its own route segment so the three endpoints don't
+	// collide on the same qualified name — see
+	// TestEndpointRouteOnSeparateAttribute for why that matters.
+	const src = `[ApiController]
+[Route("[controller]")]
+[Authorize(AuthenticationSchemes = "AppBearer")]
+public class DiagnosticController : ControllerBase
+{
+    [HttpGet("get")]
+    [Authorize(Roles = "bankme-application-admin")]
+    public async Task<IActionResult> Get() { return Ok(); }
+
+    [HttpGet("public")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Public() { return Ok(); }
+
+    [HttpGet("inherited")]
+    public async Task<IActionResult> Inherited() { return Ok(); }
+}
+
+public class ApiKeyAuthorizeAttribute : TypeFilterAttribute
+{
+    public ApiKeyAuthorizeAttribute(string keyName) : base(typeof(ApiKeyAuthorizeFilter))
+    {
+        Arguments = [keyName];
+    }
+}
+`
+	a := New()
+	fa, err := a.Analyze("Controllers/DiagnosticController.cs", []byte(src))
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	endpoints := map[string]parser.Symbol{}
+	var wrapper *parser.Symbol
+	for i := range fa.Symbols {
+		s := fa.Symbols[i]
+		if s.Kind == parser.KindEndpoint {
+			endpoints[s.Name] = s
+		}
+		if s.Name == "ApiKeyAuthorizeAttribute" {
+			wrapper = &fa.Symbols[i]
+		}
+	}
+	if len(endpoints) != 3 {
+		t.Fatalf("expected 3 distinct endpoints, got %d: %v", len(endpoints), endpoints)
+	}
+
+	get := endpoints["GET Diagnostic/get"]
+	if !hasAttr(get.Attrs, "Authorize", "Roles", "bankme-application-admin") {
+		t.Errorf("Get: expected its own [Authorize(Roles=...)], got %+v", get.Attrs)
+	}
+	if !hasAttr(get.Attrs, "Authorize", "AuthenticationSchemes", "AppBearer") {
+		t.Errorf("Get: expected the class-level [Authorize(AuthenticationSchemes=...)] to be inherited too, got %+v", get.Attrs)
+	}
+
+	public := endpoints["GET Diagnostic/public"]
+	if !hasAttr(public.Attrs, "AllowAnonymous", "", "") {
+		t.Errorf("Public: expected its own [AllowAnonymous], got %+v", public.Attrs)
+	}
+	if !hasAttr(public.Attrs, "Authorize", "AuthenticationSchemes", "AppBearer") {
+		t.Errorf("Public: expected the class-level [Authorize] to still be present alongside [AllowAnonymous] — a Rule, not the parser, decides AllowAnonymous wins, got %+v", public.Attrs)
+	}
+
+	inherited := endpoints["GET Diagnostic/inherited"]
+	if !hasAttr(inherited.Attrs, "Authorize", "AuthenticationSchemes", "AppBearer") {
+		t.Errorf("Inherited: expected only the inherited class-level [Authorize], got %+v", inherited.Attrs)
+	}
+	if hasAttr(inherited.Attrs, "AllowAnonymous", "", "") {
+		t.Errorf("Inherited: did not expect [AllowAnonymous], got %+v", inherited.Attrs)
+	}
+
+	if wrapper == nil {
+		t.Fatal("expected to find the ApiKeyAuthorizeAttribute class symbol")
+	}
+	if wrapper.WrapsType != "ApiKeyAuthorizeFilter" {
+		t.Errorf("expected WrapsType %q, got %q", "ApiKeyAuthorizeFilter", wrapper.WrapsType)
+	}
+}
+
+// hasAttr reports whether attrs contains one named attrName with the given
+// key/value pair (key/value both "" matches on name alone, for attributes
+// like [AllowAnonymous] that take no arguments).
+func hasAttr(attrs []parser.AttrRef, attrName, key, value string) bool {
+	for _, a := range attrs {
+		if a.Name != attrName {
+			continue
+		}
+		if key == "" {
+			return true
+		}
+		if a.Args[key] == value {
+			return true
+		}
+	}
+	return false
+}

@@ -6,7 +6,7 @@
 // keystroke-adjacent re-render).
 import * as vscode from "vscode";
 import * as path from "path";
-import { GraphSentryClient, CouplingScore } from "./client";
+import { GraphSentryClient, CouplingScore, EndpointFinding } from "./client";
 
 /** One line's worth of CodeLens data — the result of merging every graph
  * symbol that happens to share a source line (see mergeLineGroup) into a
@@ -19,12 +19,22 @@ interface LineEntry {
   flowTargetId: string;
 }
 
+/** One endpoint reported "unprotected" by `graphsentry security endpoints`
+ * — the only status this CodeLens surfaces (see refreshSecurity). */
+interface UnprotectedEntry {
+  line: number; // 1-based, matching GraphNode.start_line
+  route: string; // e.g. "GET /users", for the click-through message
+  file: string;
+}
+
 export class GraphSentryCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
 
   // repoPath -> (workspace-relative file path -> merged per-line entries)
   private cache = new Map<string, Map<string, LineEntry[]>>();
+  // repoPath -> (workspace-relative file path -> unprotected endpoints)
+  private securityCache = new Map<string, Map<string, UnprotectedEntry[]>>();
 
   constructor(private client: GraphSentryClient) {}
 
@@ -68,6 +78,33 @@ export class GraphSentryCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
+  /** Re-fetches `graphsentry security endpoints` for repoPath — separate
+   * from refresh() (a different CLI command, a different cache) but the
+   * same call sites: after `analyze` completes, and silently on
+   * activation. Only StatusUnprotected findings are cached: "protected"
+   * repeated over every guarded endpoint would be noise, and "unknown"
+   * would fire on every endpoint in a language with no security.Rule yet
+   * (which is most of them today) — see internal/security's package doc.
+   */
+  async refreshSecurity(repoPath: string): Promise<void> {
+    try {
+      const findings = await this.client.securityEndpoints(repoPath);
+      const byFile = new Map<string, UnprotectedEntry[]>();
+      for (const f of findings) {
+        if (f.status !== "unprotected" || !f.endpoint.file || !f.endpoint.start_line) continue;
+        const list = byFile.get(f.endpoint.file) ?? [];
+        list.push({ line: f.endpoint.start_line, route: f.endpoint.name, file: f.endpoint.file });
+        byFile.set(f.endpoint.file, list);
+      }
+      this.securityCache.set(repoPath, byFile);
+      this._onDidChangeCodeLenses.fire();
+    } catch {
+      // Same reasoning as refresh(): no analyzed graph yet, or a CLI
+      // version that predates this command — stay quiet, leave the cache
+      // as-is.
+    }
+  }
+
   /** Forces VS Code to re-request CodeLenses without refetching data —
    * used when the "graphsentry.codeLens.enabled" setting changes, since that
    * only affects rendering, not the underlying coupling data. */
@@ -83,14 +120,27 @@ export class GraphSentryCodeLensProvider implements vscode.CodeLensProvider {
     if (!folder) return [];
     const repoPath = folder.uri.fsPath;
 
-    const byFile = this.cache.get(repoPath);
-    if (!byFile) return [];
-
     const relFile = path.relative(repoPath, document.uri.fsPath).split(path.sep).join("/");
-    const entries = byFile.get(relFile);
-    if (!entries || entries.length === 0) return [];
+    const entries = this.cache.get(repoPath)?.get(relFile);
 
     const lenses: vscode.CodeLens[] = [];
+
+    const unprotected = this.securityCache.get(repoPath)?.get(relFile);
+    if (unprotected) {
+      for (const u of unprotected) {
+        const line = Math.max(0, u.line - 1);
+        lenses.push(
+          new vscode.CodeLens(new vscode.Range(line, 0, line, 0), {
+            title: "⚠ No auth guard detected",
+            command: "graphsentry.securityEndpointInfo",
+            arguments: [u],
+          })
+        );
+      }
+    }
+
+    if (!entries || entries.length === 0) return lenses;
+
     for (const entry of entries) {
       const line = Math.max(0, entry.line - 1);
       const range = new vscode.Range(line, 0, line, 0);
