@@ -35,6 +35,13 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("graphsentry.analyze", () => runAnalyze()),
     vscode.commands.registerCommand("graphsentry.coupling", () => runCoupling()),
+    vscode.commands.registerCommand("graphsentry.securityEndpoints", () => runSecurityEndpoints()),
+    // graphsentry.securityEndpointInfo has no palette/menu/sidebar entry —
+    // like graphsentry.flow, it's only ever invoked from a CodeLens click,
+    // with the specific endpoint already known.
+    vscode.commands.registerCommand("graphsentry.securityEndpointInfo", (entry?: { route: string; file: string; line: number }) =>
+      runSecurityEndpointInfo(entry)
+    ),
     vscode.commands.registerCommand("graphsentry.impact", (symbol?: string) => runImpact(symbol)),
     vscode.commands.registerCommand("graphsentry.dependencies", (symbol?: string) => runDependencies(symbol)),
     // graphsentry.flow has no palette/menu/sidebar entry (see package.json)
@@ -55,6 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
   // document, not just the first one.
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     void codeLensProvider.refresh(folder.uri.fsPath);
+    void codeLensProvider.refreshSecurity(folder.uri.fsPath);
   }
 }
 
@@ -108,6 +116,7 @@ async function runAnalyze() {
     );
     vscode.window.showInformationMessage("GraphSentry: analysis complete.");
     await codeLensProvider.refresh(repoPath);
+    await codeLensProvider.refreshSecurity(repoPath);
   });
 }
 
@@ -137,6 +146,71 @@ async function runCoupling() {
   if (picked) {
     await followUpOnNode(repoPath, picked.node);
   }
+}
+
+// Icons/labels for each internal/security.Status value — see that type's
+// doc comment for what each one means. "unknown" (no security.Rule for
+// this endpoint's language yet) is intentionally unlabeled rather than
+// implying anything's wrong with it.
+const STATUS_DISPLAY: Record<string, { icon: string; label: string }> = {
+  protected: { icon: "$(shield)", label: "protected" },
+  public: { icon: "$(unlock)", label: "public (explicit)" },
+  unprotected: { icon: "$(warning)", label: "unprotected" },
+  unknown: { icon: "$(question)", label: "unknown" },
+};
+
+/** Palette/sidebar entry point for `graphsentry security endpoints` — a
+ * QuickPick over every endpoint GraphSentry found, unprotected ones first,
+ * so the actionable findings don't get buried under a long protected list.
+ * See codeLensProvider.ts's CodeLens for the always-visible, no-click-needed
+ * version of the same data. */
+async function runSecurityEndpoints() {
+  const repoPath = await currentWorkspacePath();
+  if (!repoPath) return;
+
+  const findings = await withErrorHandling(() => client.securityEndpoints(repoPath));
+  if (!findings) return;
+
+  if (findings.length === 0) {
+    vscode.window.showInformationMessage("GraphSentry: no HTTP endpoints found. Run 'GraphSentry: Analyze Workspace' first.");
+    return;
+  }
+
+  const order = ["unprotected", "unknown", "public", "protected"];
+  const sorted = [...findings].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
+
+  const items = sorted.map((f) => {
+    const display = STATUS_DISPLAY[f.status] ?? { icon: "", label: f.status };
+    const guardNames = (f.guards ?? []).map((g) => g.guard_name).join(", ");
+    return {
+      label: `${display.icon} ${f.endpoint.name}`,
+      description: guardNames ? `${display.label} · ${guardNames}` : display.label,
+      detail: f.endpoint.file,
+      node: f.endpoint,
+    };
+  });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title: "Endpoints and their auth guard status (structural signal, not a vulnerability scan)",
+    matchOnDescription: true,
+  });
+  if (picked) {
+    await followUpOnNode(repoPath, picked.node);
+  }
+}
+
+/** CodeLens click handler for the "⚠ No auth guard detected" lens. Just an
+ * explanatory message, not a QuickPick like runSecurityEndpoints() above —
+ * clicking it from the source line means the endpoint (and its file) is
+ * already right there on screen; the one thing worth surfacing is the
+ * caveat that this is a structural signal, not a confirmed vulnerability.
+ */
+async function runSecurityEndpointInfo(entry?: { route: string; file: string; line: number }) {
+  if (!entry) return;
+  vscode.window.showWarningMessage(
+    `GraphSentry: no auth guard was found for ${entry.route} (${entry.file}:${entry.line}). ` +
+      "This is a structural signal, not a vulnerability scan — verify it's actually meant to be open before treating it as a finding."
+  );
 }
 
 /**

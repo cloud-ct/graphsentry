@@ -58,6 +58,25 @@ export interface FlowResult {
   mermaid: string;
 }
 
+/** Mirrors internal/security.Status — see that type's doc comment for what
+ * each value means. */
+export type AuthStatus = "protected" | "public" | "unprotected" | "unknown";
+
+export interface GuardMatch {
+  endpoint_id: string;
+  guard_name: string;
+  file: string;
+  line: number;
+  public: boolean;
+}
+
+/** Mirrors internal/security.EndpointFinding. */
+export interface EndpointFinding {
+  endpoint: GraphNode;
+  status: AuthStatus;
+  guards?: GuardMatch[];
+}
+
 export class GraphSentryError extends Error {}
 
 export class GraphSentryClient {
@@ -89,6 +108,14 @@ export class GraphSentryClient {
   async flow(repoPath: string, symbol: string, depth = 5): Promise<FlowResult> {
     const out = await this.run(["flow", symbol, "--repo", repoPath, "--depth", String(depth), "--json"]);
     return JSON.parse(out) as FlowResult;
+  }
+
+  /** Runs `graphsentry security endpoints --json` — see internal/security's
+   * package doc for what this reports (and doesn't: a structural signal,
+   * not a vulnerability scan). */
+  async securityEndpoints(repoPath: string): Promise<EndpointFinding[]> {
+    const out = await this.run(["security", "endpoints", "--repo", repoPath, "--json"]);
+    return (JSON.parse(out) as EndpointFinding[] | null) ?? [];
   }
 
   /** Streams `graphsentry ask --stream`, invoking onDelta with each raw text

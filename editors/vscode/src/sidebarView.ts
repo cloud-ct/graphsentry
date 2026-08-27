@@ -22,6 +22,7 @@ const ENTRIES: CommandEntry[] = [
   { label: "Analyze Workspace", description: "Build/refresh the code graph", command: "graphsentry.analyze", icon: "sync" },
   { label: "Most Coupled Symbols", description: "Fan-in + fan-out ranking", command: "graphsentry.coupling", icon: "graph" },
   { label: "Impact Analysis", description: "Symbol at cursor", command: "graphsentry.impact", icon: "references" },
+  { label: "Endpoints Without Auth", description: "Structural signal, not a vuln scan", command: "graphsentry.securityEndpoints", icon: "shield" },
   { label: "Configure LLM Provider", description: "API key for Ask", command: "graphsentry.configureProvider", icon: "key" },
 ];
 
